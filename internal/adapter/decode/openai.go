@@ -76,11 +76,12 @@ func OpenAIChatToIR(req openai.ChatRequest) (ir.Request, error) {
 			})
 		}
 		messages = append(messages, ir.Message{
-			Role:       roleFromString(msg.Role),
-			Content:    msg.Content,
-			Name:       msg.Name,
-			ToolCalls:  toolCalls,
-			ToolCallID: msg.ToolCallID,
+			Role:           roleFromString(msg.Role),
+			Content:        msg.Content,
+			Name:           msg.Name,
+			ToolCalls:      toolCalls,
+			ToolCallID:     msg.ToolCallID,
+			ThinkingBlocks: thinkingBlocksFromAdditionalKwargs(msg.AdditionalKwargs),
 		})
 	}
 
@@ -309,6 +310,41 @@ func captureAdditionalKwargsMetadata(additional map[string]any, metadata map[str
 	}
 	if profileARN, ok := additional["profileArn"].(string); ok && strings.TrimSpace(profileARN) != "" {
 		metadata["profileArn"] = strings.TrimSpace(profileARN)
+	}
+}
+
+func thinkingBlocksFromAdditionalKwargs(additional map[string]any) []ir.ThinkingBlock {
+	if len(additional) == 0 {
+		return nil
+	}
+	raw, ok := additional["thinking_blocks"]
+	if !ok {
+		return nil
+	}
+
+	switch typed := raw.(type) {
+	case []ir.ThinkingBlock:
+		return append([]ir.ThinkingBlock(nil), typed...)
+	case []any:
+		blocks := make([]ir.ThinkingBlock, 0, len(typed))
+		for _, item := range typed {
+			block, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			thinking, _ := block["thinking"].(string)
+			signature, _ := block["signature"].(string)
+			if strings.TrimSpace(thinking) == "" && strings.TrimSpace(signature) == "" {
+				continue
+			}
+			blocks = append(blocks, ir.ThinkingBlock{Thinking: thinking, Signature: signature})
+		}
+		if len(blocks) == 0 {
+			return nil
+		}
+		return blocks
+	default:
+		return nil
 	}
 }
 

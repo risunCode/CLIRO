@@ -1,10 +1,13 @@
 package encode
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
 	"cliro-go/internal/adapter/ir"
+	"cliro-go/internal/adapter/rules"
 	"cliro-go/internal/protocol/anthropic"
 
 	"github.com/google/uuid"
@@ -12,14 +15,14 @@ import (
 
 func IRToAnthropicMessages(resp ir.Response) anthropic.MessagesResponse {
 	content := []map[string]any{}
-	if resp.Thinking != "" {
+	if strings.TrimSpace(resp.Thinking) != "" {
 		content = append(content, map[string]any{
 			"type":      "thinking",
 			"thinking":  resp.Thinking,
-			"signature": generateThinkingSignature(),
+			"signature": resolveThinkingSignature(resp.Thinking, resp.ThinkingSignature),
 		})
 	}
-	if resp.Text != "" {
+	if strings.TrimSpace(resp.Text) != "" {
 		content = append(content, map[string]any{"type": "text", "text": resp.Text})
 	}
 	for _, call := range resp.ToolCalls {
@@ -31,10 +34,7 @@ func IRToAnthropicMessages(resp ir.Response) anthropic.MessagesResponse {
 		if id == "" {
 			id = "toolu_" + uuid.NewString()[:8]
 		}
-		input := map[string]any{}
-		if strings.TrimSpace(call.Arguments) != "" {
-			_ = json.Unmarshal([]byte(call.Arguments), &input)
-		}
+		input := remappedToolCallArguments(name, call.Arguments)
 		content = append(content, map[string]any{
 			"type":  "tool_use",
 			"id":    id,
@@ -43,13 +43,10 @@ func IRToAnthropicMessages(resp ir.Response) anthropic.MessagesResponse {
 		})
 	}
 
-	stopReason := firstNonEmpty(resp.StopReason, "end_turn")
-	if stopReason == "tool_calls" || len(resp.ToolCalls) > 0 {
-		stopReason = "tool_use"
-	}
+	stopReason := anthropicStopReason(resp.StopReason, len(resp.ToolCalls) > 0)
 
 	return anthropic.MessagesResponse{
-		ID:           "msg_" + uuid.NewString(),
+		ID:           anthropicMessageID(resp.ID),
 		Type:         "message",
 		Role:         "assistant",
 		Model:        resp.Model,
@@ -57,16 +54,69 @@ func IRToAnthropicMessages(resp ir.Response) anthropic.MessagesResponse {
 		StopReason:   stopReason,
 		StopSequence: nil,
 		Usage: anthropic.Usage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
+			InputTokens:  anthropicInputTokens(resp.Usage),
+			OutputTokens: anthropicOutputTokens(resp.Usage),
 		},
 	}
 }
 
-func generateThinkingSignature() string {
-	raw := strings.ReplaceAll(uuid.NewString(), "-", "")
-	if len(raw) > 32 {
-		raw = raw[:32]
+func StableThinkingSignature(thinking string) string {
+	trimmed := strings.TrimSpace(thinking)
+	if trimmed == "" {
+		return ""
 	}
-	return "sig_" + raw
+	sum := sha256.Sum256([]byte(trimmed))
+	return "sig_" + hex.EncodeToString(sum[:])
+}
+
+func resolveThinkingSignature(thinking string, signature string) string {
+	trimmed := strings.TrimSpace(signature)
+	if trimmed != "" {
+		return trimmed
+	}
+	return StableThinkingSignature(thinking)
+}
+
+func remappedToolCallArguments(name string, arguments string) map[string]any {
+	input := map[string]any{}
+	if strings.TrimSpace(arguments) != "" {
+		_ = json.Unmarshal([]byte(arguments), &input)
+	}
+	return rules.RemapToolCallArgs(name, input)
+}
+
+func anthropicStopReason(stopReason string, hasToolCalls bool) string {
+	if hasToolCalls {
+		return "tool_use"
+	}
+	switch strings.TrimSpace(stopReason) {
+	case "", "stop", "end_turn":
+		return "end_turn"
+	case "tool_calls", "tool_use":
+		return "tool_use"
+	default:
+		return strings.TrimSpace(stopReason)
+	}
+}
+
+func anthropicInputTokens(usage ir.Usage) int {
+	if usage.InputTokens > 0 {
+		return usage.InputTokens
+	}
+	return usage.PromptTokens
+}
+
+func anthropicOutputTokens(usage ir.Usage) int {
+	if usage.OutputTokens > 0 {
+		return usage.OutputTokens
+	}
+	return usage.CompletionTokens
+}
+
+func anthropicMessageID(candidate string) string {
+	trimmed := strings.TrimSpace(candidate)
+	if strings.HasPrefix(trimmed, "msg_") {
+		return trimmed
+	}
+	return "msg_" + uuid.NewString()
 }

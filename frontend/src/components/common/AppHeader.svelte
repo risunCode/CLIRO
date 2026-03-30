@@ -1,10 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { Activity, LayoutDashboard, Logs, Moon, Network, Palette, Settings2, Sun, Users } from 'lucide-svelte'
-  import { getNextThemeLabel, type Theme } from '@/stores/theme'
+  import { getNextThemeLabel, type Theme } from '@/shared/stores/theme'
   import Button from '@/components/common/Button.svelte'
   import appIcon from '@/assets/icons/cliro-icon.png'
-  import { APP_TABS, type AppTabId } from '@/utils/tabs'
+  import { APP_TABS, type AppTabId } from '@/app/lib/tabs'
 
   export let activeTab: AppTabId = 'dashboard'
   export let theme: Theme = 'light'

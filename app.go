@@ -20,6 +20,7 @@ import (
 	"cliro-go/internal/gateway"
 	"cliro-go/internal/logger"
 	"cliro-go/internal/platform"
+	providerquota "cliro-go/internal/provider/quota"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -31,6 +32,7 @@ type App struct {
 	store *config.Manager
 	log   *logger.Logger
 	auth  *auth.Manager
+	quota *providerquota.Service
 	pool  *account.Pool
 	proxy *gateway.Server
 	cf    *cloudflared.Manager
@@ -98,8 +100,13 @@ func (a *App) startup(ctx context.Context) {
 	a.store = store
 	a.pool = account.NewPool(store)
 	a.auth = auth.NewManager(store, a.log)
+	a.quota = providerquota.NewService(store, a.auth, a.log, a.auth.HTTPClient())
+	a.auth.SetQuotaRefresher(a.quota)
 	a.proxy = gateway.NewServer(store, a.auth, a.pool, a.log)
 	a.cf = cloudflared.NewManager(dataDir, a.log)
+	if a.cf != nil {
+		a.cf.RefreshStatus()
+	}
 	a.cli = clisync.NewService(a.log)
 	for _, warning := range store.StartupWarnings() {
 		a.log.Warn("config", warning.Message)
@@ -292,21 +299,21 @@ func (a *App) RefreshAccount(accountID string) error {
 }
 
 func (a *App) RefreshAccountWithQuota(accountID string) error {
-	_, err := a.auth.RefreshAccountWithQuota(accountID)
+	_, err := a.quota.RefreshAccountWithQuota(accountID)
 	return err
 }
 
 func (a *App) RefreshQuota(accountID string) error {
-	_, err := a.auth.RefreshQuota(accountID)
+	_, err := a.quota.RefreshQuota(accountID)
 	return err
 }
 
 func (a *App) RefreshAllQuotas() error {
-	return a.auth.RefreshAllQuotas()
+	return a.quota.RefreshAllQuotas()
 }
 
 func (a *App) ForceRefreshAllQuotas() error {
-	return a.auth.ForceRefreshAllQuotas()
+	return a.quota.ForceRefreshAllQuotas()
 }
 
 func (a *App) GetLocalModelCatalog() []map[string]any {
@@ -342,6 +349,7 @@ func (a *App) GetCLISyncStatuses() ([]map[string]any, error) {
 			"id":             status.ID,
 			"label":          status.Label,
 			"installed":      status.Installed,
+			"installPath":    status.InstallPath,
 			"version":        status.Version,
 			"synced":         status.Synced,
 			"currentBaseUrl": status.CurrentBaseURL,
@@ -557,6 +565,24 @@ func (a *App) SetCloudflaredConfig(mode string, token string, useHTTP2 bool) err
 	}
 	settings := a.store.Cloudflared()
 	a.log.Info("cloudflared", fmt.Sprintf("cloudflared config updated mode=%q useHttp2=%t", settings.Mode, settings.UseHTTP2))
+	return nil
+}
+
+func (a *App) GetModelAliases() (map[string]string, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("store is not ready")
+	}
+	return a.store.ModelAliases(), nil
+}
+
+func (a *App) SetModelAliases(aliases map[string]string) error {
+	if a.store == nil {
+		return fmt.Errorf("store is not ready")
+	}
+	if err := a.store.SetModelAliases(aliases); err != nil {
+		return err
+	}
+	a.log.Info("config", fmt.Sprintf("model aliases updated count=%d", len(aliases)))
 	return nil
 }
 

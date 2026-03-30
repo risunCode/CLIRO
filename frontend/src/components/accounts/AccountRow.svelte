@@ -1,7 +1,7 @@
 <script lang="ts">
   import AccountActions from '@/components/accounts/AccountActions.svelte'
   import ProviderAvatar from '@/components/accounts/ProviderAvatar.svelte'
-  import type { Account } from '@/services/wails-api'
+  import type { Account } from '@/features/accounts/types'
   import {
     formatBucketLabel,
     formatQuotaDateTime,
@@ -12,8 +12,8 @@
     metricPercent,
     deriveQuotaDisplayStatus,
     quotaStatusLabel
-  } from '@/utils/account-quota'
-  import { normalizeProviderID } from '@/utils/account'
+  } from '@/features/accounts/lib/account-quota'
+  import { normalizeProviderID } from '@/features/accounts/lib/account'
 
 export let account: Account
 export let selected = false

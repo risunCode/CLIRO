@@ -22,7 +22,6 @@ const (
 	AppClaudeCode App = "claude-code"
 	AppOpenCode   App = "opencode-cli"
 	AppCodexAI    App = "codex-ai"
-	AppGeminiCLI  App = "gemini-cli"
 )
 
 type FileInfo struct {
@@ -34,6 +33,7 @@ type Status struct {
 	ID             string     `json:"id"`
 	Label          string     `json:"label"`
 	Installed      bool       `json:"installed"`
+	InstallPath    string     `json:"installPath,omitempty"`
 	Version        string     `json:"version,omitempty"`
 	Synced         bool       `json:"synced"`
 	CurrentBaseURL string     `json:"currentBaseUrl,omitempty"`
@@ -65,6 +65,7 @@ type Service struct {
 
 type installProbeCache struct {
 	Installed bool
+	Path      string
 	Version   string
 	CheckedAt time.Time
 }
@@ -106,18 +107,6 @@ var appDefinitions = []appDefinition{
 			return []FileInfo{
 				{Name: "auth.json", Path: filepath.Join(home, ".codex", "auth.json")},
 				{Name: "config.toml", Path: filepath.Join(home, ".codex", "config.toml")},
-			}
-		},
-	},
-	{
-		id:      AppGeminiCLI,
-		label:   "Gemini CLI Config",
-		command: "gemini",
-		files: func(home string) []FileInfo {
-			return []FileInfo{
-				{Name: ".env", Path: filepath.Join(home, ".gemini", ".env")},
-				{Name: "settings.json", Path: filepath.Join(home, ".gemini", "settings.json")},
-				{Name: "config.json", Path: filepath.Join(home, ".gemini", "config.json")},
 			}
 		},
 	},
@@ -251,16 +240,17 @@ func (s *Service) WriteConfigFile(app App, path string, content string) error {
 func (s *Service) statusForApp(app appDefinition, home string, baseURL string) (Status, error) {
 	files := app.files(home)
 	expectedBaseURL := expectedBaseURLForApp(app.id, baseURL)
-	installed, version := s.getInstallStatus(app.command)
+	installed, version, installPath := s.getInstallStatus(app.command, true)
 	if !installed && hasAnyExistingFile(files) {
 		installed = true
 	}
 	status := Status{
-		ID:        string(app.id),
-		Label:     app.label,
-		Installed: installed,
-		Version:   version,
-		Files:     files,
+		ID:          string(app.id),
+		Label:       app.label,
+		Installed:   installed,
+		InstallPath: installPath,
+		Version:     version,
+		Files:       files,
 	}
 
 	switch app.id {
@@ -288,14 +278,6 @@ func (s *Service) statusForApp(app appDefinition, home string, baseURL string) (
 		status.CurrentBaseURL = currentBaseURL
 		status.CurrentModel = currentModel
 		status.Synced = sameURL(currentBaseURL, expectedBaseURL)
-	case AppGeminiCLI:
-		currentBaseURL, currentModel, authConfigured, err := readGeminiStatus(files)
-		if err != nil {
-			return Status{}, err
-		}
-		status.CurrentBaseURL = currentBaseURL
-		status.CurrentModel = currentModel
-		status.Synced = authConfigured && sameURL(currentBaseURL, expectedBaseURL)
 	}
 
 	return status, nil
@@ -310,28 +292,25 @@ func (s *Service) hasModel(model string) bool {
 	return false
 }
 
-func (s *Service) checkInstalled(command string) (bool, string) {
-	path, err := s.lookPathFn(command)
-	if err != nil {
-		path = scanCommonCLIPath(command)
-	}
+func (s *Service) checkInstalled(command string) (bool, string, string) {
+	path := s.findInstalledCommandPath(command)
 	if strings.TrimSpace(path) == "" {
-		return false, ""
+		return false, "", ""
 	}
 
 	cmd := exec.Command(path, "--version")
 	configureCommand(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return true, ""
+		return true, "", path
 	}
 
-	return true, extractVersion(string(output))
+	return true, extractVersion(string(output)), path
 }
 
-func (s *Service) getInstallStatus(command string) (bool, string) {
+func (s *Service) getInstallStatus(command string, force bool) (bool, string, string) {
 	if s == nil {
-		return false, ""
+		return false, "", ""
 	}
 
 	now := time.Now()
@@ -339,24 +318,42 @@ func (s *Service) getInstallStatus(command string) (bool, string) {
 		now = s.nowFn()
 	}
 
-	s.installMu.Lock()
-	if cached, ok := s.installCache[command]; ok && now.Sub(cached.CheckedAt) < installProbeCacheTTL {
+	if !force {
+		s.installMu.Lock()
+		if cached, ok := s.installCache[command]; ok && now.Sub(cached.CheckedAt) < installProbeCacheTTL {
+			s.installMu.Unlock()
+			return cached.Installed, cached.Version, cached.Path
+		}
 		s.installMu.Unlock()
-		return cached.Installed, cached.Version
 	}
-	s.installMu.Unlock()
 
-	installed, version := s.checkInstalled(command)
+	installed, version, installPath := s.checkInstalled(command)
 
 	s.installMu.Lock()
 	s.installCache[command] = installProbeCache{
 		Installed: installed,
+		Path:      installPath,
 		Version:   version,
 		CheckedAt: now,
 	}
 	s.installMu.Unlock()
 
-	return installed, version
+	return installed, version, installPath
+}
+
+func (s *Service) findInstalledCommandPath(command string) string {
+	for _, executableName := range commandExecutableNames(command) {
+		path, err := s.lookPathFn(executableName)
+		if err == nil && strings.TrimSpace(path) != "" {
+			return path
+		}
+	}
+
+	if path := scanCommonCLIPath(command); strings.TrimSpace(path) != "" {
+		return path
+	}
+
+	return scanPathEnv(command)
 }
 
 func hasAnyExistingFile(files []FileInfo) bool {
@@ -401,7 +398,7 @@ func expectedBaseURLForApp(app App, baseURL string) string {
 	if trimmed == "" {
 		return ""
 	}
-	if app == AppCodexAI || app == AppOpenCode {
+	if app == AppCodexAI || app == AppOpenCode || app == AppClaudeCode {
 		if strings.HasSuffix(trimmed, "/v1") {
 			return trimmed
 		}
@@ -412,21 +409,28 @@ func expectedBaseURLForApp(app App, baseURL string) string {
 
 func scanCommonCLIPath(command string) string {
 	candidates := make([]string, 0)
+	names := commandExecutableNames(command)
 	if appData := os.Getenv("APPDATA"); appData != "" {
-		candidates = append(candidates, filepath.Join(appData, "npm", command+cmdExt()))
+		for _, name := range names {
+			candidates = append(candidates, filepath.Join(appData, "npm", name))
+		}
 	}
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		candidates = append(candidates,
-			filepath.Join(localAppData, "pnpm", command+cmdExt()),
-			filepath.Join(localAppData, "Yarn", "bin", command+cmdExt()),
-		)
+		for _, name := range names {
+			candidates = append(candidates,
+				filepath.Join(localAppData, "pnpm", name),
+				filepath.Join(localAppData, "Yarn", "bin", name),
+			)
+		}
 	}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		candidates = append(candidates,
-			filepath.Join(home, ".bun", "bin", command+binExt()),
-			filepath.Join(home, ".local", "bin", command+binExt()),
-			filepath.Join(home, "bin", command+binExt()),
-		)
+		for _, name := range names {
+			candidates = append(candidates,
+				filepath.Join(home, ".bun", "bin", name),
+				filepath.Join(home, ".local", "bin", name),
+				filepath.Join(home, "bin", name),
+			)
+		}
 	}
 	for _, candidate := range candidates {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
@@ -436,18 +440,46 @@ func scanCommonCLIPath(command string) string {
 	return ""
 }
 
-func cmdExt() string {
-	if runtime.GOOS == "windows" {
-		return ".cmd"
+func scanPathEnv(command string) string {
+	pathEnv := strings.TrimSpace(os.Getenv("PATH"))
+	if pathEnv == "" {
+		return ""
 	}
+
+	names := commandExecutableNames(command)
+	for _, directory := range filepath.SplitList(pathEnv) {
+		trimmedDir := strings.TrimSpace(directory)
+		if trimmedDir == "" {
+			continue
+		}
+		for _, name := range names {
+			candidate := filepath.Join(trimmedDir, name)
+			info, err := os.Stat(candidate)
+			if err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
+	}
+
 	return ""
 }
 
-func binExt() string {
-	if runtime.GOOS == "windows" {
-		return ".exe"
+func commandExecutableNames(command string) []string {
+	base := strings.TrimSpace(command)
+	if base == "" {
+		return nil
 	}
-	return ""
+
+	if runtime.GOOS != "windows" {
+		return []string{base}
+	}
+
+	return []string{
+		base,
+		base + ".cmd",
+		base + ".exe",
+		base + ".bat",
+	}
 }
 
 func extractVersion(raw string) string {
@@ -507,35 +539,6 @@ func readCodexStatus(files []FileInfo) (string, string, error) {
 	return currentBaseURL, currentModel, nil
 }
 
-func readGeminiStatus(files []FileInfo) (string, string, bool, error) {
-	var currentBaseURL string
-	var currentModel string
-	authConfigured := false
-	for _, file := range files {
-		if _, err := os.Stat(file.Path); os.IsNotExist(err) {
-			continue
-		}
-		data, err := os.ReadFile(file.Path)
-		if err != nil {
-			return "", "", false, fmt.Errorf("read %s: %w", file.Path, err)
-		}
-		if file.Name == ".env" {
-			content := string(data)
-			currentBaseURL = parseEnvValue(content, "GOOGLE_GEMINI_BASE_URL")
-			currentModel = parseEnvValue(content, "GOOGLE_GEMINI_MODEL")
-			continue
-		}
-		jsonDoc, err := parseJSONObject(data)
-		if err != nil {
-			return "", "", false, fmt.Errorf("parse %s: %w", file.Path, err)
-		}
-		if stringValue(jsonMap(jsonMap(jsonDoc, "security"), "auth")["selectedType"]) == "gemini-api-key" {
-			authConfigured = true
-		}
-	}
-	return currentBaseURL, currentModel, authConfigured, nil
-}
-
 func readOpenCodeStatus(files []FileInfo) (string, string, error) {
 	for _, file := range files {
 		if _, err := os.Stat(file.Path); os.IsNotExist(err) {
@@ -570,8 +573,6 @@ func patchFile(app App, fileName string, content string, baseURL string, apiKey 
 		return patchOpenCodeFile(content, baseURL, apiKey, model)
 	case AppCodexAI:
 		return patchCodexFile(fileName, content, baseURL, apiKey, model)
-	case AppGeminiCLI:
-		return patchGeminiFile(fileName, content, baseURL, apiKey, model)
 	default:
 		return "", fmt.Errorf("unsupported cli sync target: %s", app)
 	}
@@ -648,27 +649,6 @@ func patchOpenCodeFile(content string, baseURL string, apiKey string, model stri
 	return marshalJSON(jsonDoc)
 }
 
-func patchGeminiFile(fileName string, content string, baseURL string, apiKey string, model string) (string, error) {
-	if fileName == ".env" {
-		return patchEnvFile(content, map[string]string{
-			"GOOGLE_GEMINI_BASE_URL": baseURL,
-			"GEMINI_API_KEY":         apiKey,
-			"GOOGLE_GEMINI_MODEL":    model,
-		}), nil
-	}
-
-	jsonDoc, err := parseJSONObject([]byte(content))
-	if err != nil {
-		return "", fmt.Errorf("parse %s: %w", fileName, err)
-	}
-	security := jsonMap(jsonDoc, "security")
-	auth := jsonMap(security, "auth")
-	auth["selectedType"] = "gemini-api-key"
-	security["auth"] = auth
-	jsonDoc["security"] = security
-	return marshalJSON(jsonDoc)
-}
-
 func patchCodexTOML(content string, baseURL string, model string) string {
 	root, sections := splitTOMLRootAndSections(content)
 	rootLines := make([]string, 0)
@@ -706,44 +686,6 @@ func patchCodexTOML(content string, baseURL string, model string) string {
 		resultParts = append(resultParts, trimmedSections)
 	}
 	return strings.Join(resultParts, "\n\n") + "\n"
-}
-
-func patchEnvFile(content string, assignments map[string]string) string {
-	lines := make([]string, 0)
-	if trimmed := strings.TrimSpace(content); trimmed != "" {
-		lines = strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	}
-
-	seen := map[string]bool{}
-	for index, line := range lines {
-		for key, value := range assignments {
-			prefix := key + "="
-			if strings.HasPrefix(strings.TrimSpace(line), prefix) {
-				if strings.TrimSpace(value) == "" {
-					lines[index] = ""
-				} else {
-					lines[index] = prefix + value
-				}
-				seen[key] = true
-			}
-		}
-	}
-
-	for key, value := range assignments {
-		if seen[key] || strings.TrimSpace(value) == "" {
-			continue
-		}
-		lines = append(lines, key+"="+value)
-	}
-
-	filtered := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		filtered = append(filtered, line)
-	}
-	return strings.Join(filtered, "\n") + "\n"
 }
 
 func splitTOMLRootAndSections(content string) (string, string) {
@@ -819,15 +761,6 @@ func parseTOMLSectionQuotedValue(sections string, sectionName string, key string
 		if value := parseTOMLQuotedValue(line, key); value != "" {
 			return value
 		}
-	}
-	return ""
-}
-
-func parseEnvValue(content string, key string) string {
-	pattern := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(key) + `=(.*)$`)
-	match := pattern.FindStringSubmatch(content)
-	if len(match) == 2 {
-		return strings.TrimSpace(match[1])
 	}
 	return ""
 }

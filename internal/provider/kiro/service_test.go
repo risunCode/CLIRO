@@ -2,140 +2,139 @@ package kiro
 
 import (
 	"context"
-	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"cliro-go/internal/account"
+	"cliro-go/internal/auth"
 	"cliro-go/internal/config"
+	"cliro-go/internal/logger"
 	provider "cliro-go/internal/provider"
 )
 
-func TestCompactBody_ExtractsJSONMessage(t *testing.T) {
-	body := []byte(`{"message":"The bearer token included in the request is invalid.","reason":null}`)
-	if got := compactBody(body); got != "The bearer token included in the request is invalid." {
-		t.Fatalf("compactBody = %q", got)
-	}
-}
+func TestRuntimeClient_RetriesAfterFirstTokenTimeout(t *testing.T) {
+	var mu sync.Mutex
+	requestHosts := make([]string, 0, 2)
+	requestTargets := make([]string, 0, 2)
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		mu.Lock()
+		requestHosts = append(requestHosts, req.URL.Host)
+		requestTargets = append(requestTargets, req.Header.Get("X-Amz-Target"))
+		attempt := len(requestHosts)
+		mu.Unlock()
 
-func TestBuildRequest_PrimaryEndpointUsesCodeWhispererHeaders(t *testing.T) {
-	service := &Service{}
-	payload, err := buildPayload(provider.ChatRequest{Model: "claude-sonnet-4.5", Messages: []provider.Message{{Role: "user", Content: "hello"}}}, "claude-sonnet-4.5", false)
-	if err != nil {
-		t.Fatalf("build payload: %v", err)
-	}
-	req, err := service.buildRequest(context.Background(), config.Account{AccessToken: "token"}, endpoints[0], payload, provider.ChatRequest{Model: "claude-sonnet-4.5"})
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	if req.URL.String() != "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse" {
-		t.Fatalf("unexpected primary endpoint url: %q", req.URL.String())
-	}
-	if req.Header.Get("X-Amz-Target") != "AmazonCodeWhispererStreamingService.GenerateAssistantResponse" {
-		t.Fatalf("unexpected primary target: %q", req.Header.Get("X-Amz-Target"))
-	}
-}
-
-func TestBuildRequest_FallbackEndpointOmitsAmzTarget(t *testing.T) {
-	service := &Service{}
-	payload, err := buildPayload(provider.ChatRequest{Model: "claude-sonnet-4.5", Messages: []provider.Message{{Role: "user", Content: "hello"}}}, "claude-sonnet-4.5", false)
-	if err != nil {
-		t.Fatalf("build payload: %v", err)
-	}
-	req, err := service.buildRequest(context.Background(), config.Account{AccessToken: "token"}, endpoints[1], payload, provider.ChatRequest{Model: "claude-sonnet-4.5"})
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	if req.URL.String() != "https://q.us-east-1.amazonaws.com/generateAssistantResponse" {
-		t.Fatalf("unexpected fallback endpoint url: %q", req.URL.String())
-	}
-	if req.Header.Get("X-Amz-Target") != "" {
-		t.Fatalf("expected fallback to omit X-Amz-Target, got %q", req.Header.Get("X-Amz-Target"))
-	}
-}
-
-func TestBuildPayload_PreservesConversationMetadata(t *testing.T) {
-	payload, err := buildPayload(provider.ChatRequest{
-		Model:    "claude-sonnet-4.5",
-		Messages: []provider.Message{{Role: "user", Content: "hello"}},
-		Metadata: map[string]any{"conversationId": "conv-1", "continuationId": "cont-1"},
-	}, "claude-sonnet-4.5", false)
-	if err != nil {
-		t.Fatalf("build payload: %v", err)
-	}
-	if payload.ConversationState.ConversationID != "conv-1" {
-		t.Fatalf("conversation id = %q", payload.ConversationState.ConversationID)
-	}
-	if payload.ConversationState.AgentContinuationID != "cont-1" {
-		t.Fatalf("continuation id = %q", payload.ConversationState.AgentContinuationID)
-	}
-}
-
-func TestBuildPayload_UsesMinimalCurrentOriginAndNoHistoryOrigin(t *testing.T) {
-	payload, err := buildPayload(provider.ChatRequest{
-		Model: "claude-sonnet-4.5",
-		Messages: []provider.Message{
-			{Role: "system", Content: "follow instructions"},
-			{Role: "user", Content: "first"},
-			{Role: "assistant", Content: "ok"},
-			{Role: "user", Content: "second"},
-		},
-	}, "claude-sonnet-4.5", false)
-	if err != nil {
-		t.Fatalf("build payload: %v", err)
-	}
-	if payload.ConversationState.CurrentMessage.UserInputMessage.Origin != kiroConversationOrigin {
-		t.Fatalf("current origin = %q", payload.ConversationState.CurrentMessage.UserInputMessage.Origin)
-	}
-	for _, item := range payload.ConversationState.History {
-		if item.UserInputMessage != nil && item.UserInputMessage.Origin != "" {
-			t.Fatalf("expected empty history origin, got %q", item.UserInputMessage.Origin)
+		if attempt == 1 {
+			return &http.Response{StatusCode: http.StatusOK, Body: newBlockingBody()}, nil
 		}
-	}
-	encoded, _ := json.Marshal(payload)
-	if string(encoded) == "" {
-		t.Fatalf("expected encoded payload")
-	}
-	if string(encoded) != "" && jsonContains(encoded, `"agentTaskType"`) {
-		t.Fatalf("unexpected agentTaskType in payload: %s", string(encoded))
-	}
-}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(awsEventFrame(t, "assistantResponseEvent", map[string]any{"content": "ok"}))))}, nil
+	})
 
-func TestBuildPayload_PlacesToolsOnlyOnCurrentMessageAndNormalizesSchema(t *testing.T) {
-	payload, err := buildPayload(provider.ChatRequest{
-		Model:    "claude-sonnet-4.5",
-		Messages: []provider.Message{{Role: "user", Content: "use a tool"}},
-		Tools:    []provider.Tool{{Type: "function", Function: provider.ToolFunction{Name: "ReadFile", Description: "Read a file", Parameters: map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}}}}},
-	}, "claude-sonnet-4.5", false)
+	client := newRuntimeClient(&http.Client{Transport: transport}, 5*time.Millisecond)
+	resp, endpoint, err := client.Do(context.Background(), config.Account{AccessToken: "token"}, []byte(`{}`))
 	if err != nil {
-		t.Fatalf("build payload: %v", err)
+		t.Fatalf("Do: %v", err)
 	}
-	ctx := payload.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext
-	if ctx == nil || len(ctx.Tools) != 1 {
-		t.Fatalf("expected current message tools, got %#v", ctx)
+	_ = resp.Body.Close()
+	if endpoint.Name == "" {
+		t.Fatalf("expected resolved endpoint name")
 	}
-	schema, ok := ctx.Tools[0].ToolSpecification.InputSchema.JSON.(map[string]any)
-	if !ok {
-		t.Fatalf("expected schema object, got %#v", ctx.Tools[0].ToolSpecification.InputSchema.JSON)
+	if len(requestHosts) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requestHosts))
 	}
-	if _, ok := schema["required"]; !ok {
-		t.Fatalf("expected required array in schema: %#v", schema)
+	if requestTargets[0] != "" {
+		t.Fatalf("unexpected primary target header: %#v", requestTargets)
 	}
-	for _, item := range payload.ConversationState.History {
-		if item.UserInputMessage != nil && item.UserInputMessage.UserInputMessageContext != nil && len(item.UserInputMessage.UserInputMessageContext.Tools) > 0 {
-			t.Fatalf("history should not contain tools: %#v", item.UserInputMessage)
+}
+
+func TestService_FailsOverAcrossAccounts(t *testing.T) {
+	store, authManager, log := newTestDeps(t)
+	if err := store.UpsertAccount(config.Account{ID: "acct-fail", Provider: "kiro", Email: "fail@example.com", AccessToken: "token-fail", Enabled: true, CreatedAt: 1, UpdatedAt: 1, HealthState: config.AccountHealthReady}); err != nil {
+		t.Fatalf("UpsertAccount fail account: %v", err)
+	}
+	if err := store.UpsertAccount(config.Account{ID: "acct-ok", Provider: "kiro", Email: "ok@example.com", AccessToken: "token-ok", Enabled: true, CreatedAt: 2, UpdatedAt: 2, HealthState: config.AccountHealthReady}); err != nil {
+		t.Fatalf("UpsertAccount ok account: %v", err)
+	}
+
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.Header.Get("Authorization") {
+		case "Bearer token-fail":
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader(`{"message":"temporary upstream failure"}`))}, nil
+		case "Bearer token-ok":
+			body := bytesJoinFrames(t,
+				awsEventFrame(t, "assistantResponseEvent", map[string]any{"content": "hello from kiro"}),
+				awsEventFrame(t, "meteringEvent", map[string]any{"usage": map[string]any{"inputTokens": 3, "outputTokens": 5, "totalTokens": 8}}),
+			)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+		default:
+			return nil, io.ErrUnexpectedEOF
 		}
+	})
+
+	service := NewService(store, authManager, account.NewPool(store), log, &http.Client{Transport: transport, Timeout: 2 * time.Second})
+	outcome, status, message, err := service.Complete(context.Background(), provider.ChatRequest{
+		RouteFamily: "openai_chat",
+		Model:       "claude-sonnet-4.5",
+		Messages:    []provider.Message{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete: status=%d message=%q err=%v", status, message, err)
+	}
+	if outcome.AccountID != "acct-ok" {
+		t.Fatalf("expected successful failover to second account, got %#v", outcome.AccountID)
+	}
+	if outcome.Text != "hello from kiro" {
+		t.Fatalf("unexpected outcome text: %#v", outcome.Text)
+	}
+	failedAccount, ok := store.GetAccount("acct-fail")
+	if !ok || failedAccount.ErrorCount == 0 {
+		t.Fatalf("expected failed account to record the failed attempt, got %#v", failedAccount)
 	}
 }
 
-func TestShouldUseFakeReasoning_FollowsThinkingSuffixOnly(t *testing.T) {
-	if !shouldUseFakeReasoning(true) {
-		t.Fatalf("expected thinking suffix to enable fake reasoning fallback")
+func newTestDeps(t *testing.T) (*config.Manager, *auth.Manager, *logger.Logger) {
+	t.Helper()
+	store, err := config.NewManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
 	}
-	if shouldUseFakeReasoning(false) {
-		t.Fatalf("expected non-thinking model to disable fake reasoning fallback")
-	}
+	log := logger.New(100)
+	return store, auth.NewManager(store, log), log
 }
 
-func jsonContains(data []byte, fragment string) bool {
-	return string(data) != "" && strings.Contains(string(data), fragment)
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type blockingBody struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newBlockingBody() *blockingBody {
+	return &blockingBody{closed: make(chan struct{})}
+}
+
+func (b *blockingBody) Read(_ []byte) (int, error) {
+	<-b.closed
+	return 0, io.EOF
+}
+
+func (b *blockingBody) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return nil
+}
+
+func bytesJoinFrames(t *testing.T, frames ...[]byte) string {
+	t.Helper()
+	joined := make([]byte, 0)
+	for _, frame := range frames {
+		joined = append(joined, frame...)
+	}
+	return string(joined)
 }

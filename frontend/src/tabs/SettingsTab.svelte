@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { Clock3, Database, FolderOpen, Save, Upload } from 'lucide-svelte'
+  import { Database, FolderOpen, Upload } from 'lucide-svelte'
   import Button from '@/components/common/Button.svelte'
   import SurfaceCard from '@/components/common/SurfaceCard.svelte'
-  import type { Account, AppState } from '@/services/wails-api'
+  import type { AppState } from '@/app/types'
+  import type { Account } from '@/features/accounts/types'
 
   interface BackupPayload {
     version: number
@@ -17,14 +18,9 @@
     total: number
   }
 
-  export let state: AppState | null = null
   export let onOpenDataDir: () => Promise<void>
-  export let currentAutoRefreshMinutes = 5
-  export let onSetSessionAutoRefreshMinutes: (minutes: number) => void
   export let onExportBackup: () => Promise<void>
   export let onRestoreBackup: (payload: BackupPayload, onProgress?: (progress: RestoreProgress) => void) => Promise<void>
-
-  let autoRefreshPresetInput = '5'
 
   let backupFileInput: HTMLInputElement | null = null
   let busy = false
@@ -43,14 +39,6 @@
     } finally {
       busy = false
     }
-  }
-
-  const parseIntWithBounds = (value: string, fallback: number, minValue: number, maxValue: number): number => {
-    const parsed = Number.parseInt(value.trim(), 10)
-    if (!Number.isFinite(parsed)) return fallback
-    if (parsed < minValue) return minValue
-    if (parsed > maxValue) return maxValue
-    return parsed
   }
 
   const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -75,13 +63,6 @@
     const exportedAt = typeof value.exportedAt === 'string' ? value.exportedAt : new Date().toISOString()
 
     return { version, exportedAt, state, accounts }
-  }
-
-  const handleApplyAutoRefresh = async (): Promise<void> => {
-    const minutes = parseIntWithBounds(autoRefreshPresetInput, currentAutoRefreshMinutes || 5, 1, 1440)
-    onSetSessionAutoRefreshMinutes(minutes)
-    statusMessage = `Auto refresh now checks the last-used eligible account every ${minutes} minute(s).`
-    errorMessage = ''
   }
 
   const handleRestoreFromFile = async (event: Event): Promise<void> => {
@@ -111,103 +92,59 @@
     }, 'Backup exported successfully.')
   }
 
-  $: if (state) {
-    autoRefreshPresetInput = String(Math.max(1, Number(currentAutoRefreshMinutes || state.autoRefreshMinutes || 5)))
-  }
-
   const dataDirPath = '~/.cliro-go'
 </script>
 
 <div class="settings-tab space-y-2.5">
-  <SurfaceCard className="p-3.5">
-    <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-      <div>
-        <p class="text-sm font-semibold text-text-primary">Settings</p>
-        <p class="mt-0.5 text-xs text-text-secondary">Compact controls for refresh behavior, local data, and safety tools.</p>
-      </div>
-      <Button variant="primary" size="sm" on:click={() => void handleApplyAutoRefresh()} disabled={busy}>
-        <Save size={14} class="mr-1" />
-        Apply Refresh Rule
-      </Button>
-    </div>
-    {#if statusMessage}
-      <p class="mt-2 text-xs text-success">{statusMessage}</p>
-    {/if}
-    {#if errorMessage}
-      <p class="mt-2 text-xs text-error">{errorMessage}</p>
-    {/if}
-  </SurfaceCard>
-
-  <div class="grid gap-2.5">
+  <!-- Data Folder + Backup Tools -->
+  <div class="grid gap-2.5 lg:grid-cols-2">
     <SurfaceCard className="p-3.5">
-      <div class="mb-3 flex items-center gap-2">
-          <Clock3 size={15} class="text-text-secondary" />
-          <p class="text-sm font-semibold text-text-primary">Auto Refresh</p>
-      </div>
-
-      <div class="grid gap-2 md:grid-cols-[160px_minmax(0,1fr)] md:items-start">
-        <label class="settings-field">
-            <span>Interval</span>
-            <select bind:value={autoRefreshPresetInput} class="ui-control-input ui-control-select-sm bg-app px-2" disabled={busy}>
-              <option value="1">1 minute</option>
-              <option value="3">3 minutes</option>
-              <option value="5">5 minutes</option>
-              <option value="10">10 minutes</option>
-              <option value="15">15 minutes</option>
-            </select>
-        </label>
-
-        <div class="rounded border border-border bg-app p-2.5 text-xs text-text-secondary">
-          <p class="font-semibold text-text-primary">New Logic</p>
-          <p class="mt-1">Refresh checks the last-used account only.</p>
-          <p class="mt-1">Skipped automatically: breached/banned, disabled, and quota-exhausted accounts that are still cooling down.</p>
-          <p class="mt-1">Sequential only, no parallel quota refresh.</p>
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <Database size={15} class="text-text-secondary" />
+          <p class="text-sm font-semibold text-text-primary">Data Folder</p>
         </div>
+        <Button variant="secondary" size="sm" on:click={() => void onOpenDataDir()} disabled={busy}>
+          <FolderOpen size={13} class="mr-1" />
+          Open
+        </Button>
       </div>
+
+      <div class="rounded border border-border bg-app p-2 font-mono text-xs text-text-secondary">{dataDirPath}</div>
     </SurfaceCard>
 
-    <div class="grid gap-2.5 lg:grid-cols-2">
-      <SurfaceCard className="p-3.5">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <Database size={15} class="text-text-secondary" />
-            <p class="text-sm font-semibold text-text-primary">Data Folder</p>
-          </div>
-          <Button variant="secondary" size="sm" on:click={() => void onOpenDataDir()} disabled={busy}>
-            <FolderOpen size={13} class="mr-1" />
-            Open
-          </Button>
-        </div>
+    <SurfaceCard className="p-3.5">
+      <div class="mb-3 flex items-center gap-2">
+        <Upload size={15} class="text-text-secondary" />
+        <p class="text-sm font-semibold text-text-primary">Backup Tools</p>
+      </div>
 
-        <div class="rounded border border-border bg-app p-2 font-mono text-xs text-text-secondary">{dataDirPath}</div>
-      </SurfaceCard>
+      <div class="flex flex-wrap gap-2">
+        <Button variant="secondary" size="sm" on:click={() => void handleExportBackup()} disabled={busy}>
+          <Database size={13} class="mr-1" />
+          Export Backup
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          on:click={() => {
+            backupFileInput?.click()
+          }}
+          disabled={busy}
+        >
+          <Upload size={13} class="mr-1" />
+          Restore Backup
+        </Button>
+      </div>
 
-      <SurfaceCard className="p-3.5">
-        <div class="mb-3 flex items-center gap-2">
-          <Upload size={15} class="text-text-secondary" />
-          <p class="text-sm font-semibold text-text-primary">Backup Tools</p>
-        </div>
+      {#if statusMessage}
+        <p class="mt-2 text-xs text-success">{statusMessage}</p>
+      {/if}
+      {#if errorMessage}
+        <p class="mt-2 text-xs text-error">{errorMessage}</p>
+      {/if}
 
-        <div class="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" on:click={() => void handleExportBackup()} disabled={busy}>
-            <Database size={13} class="mr-1" />
-            Export Backup
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            on:click={() => {
-              backupFileInput?.click()
-            }}
-            disabled={busy}
-          >
-            <Upload size={13} class="mr-1" />
-            Restore Backup
-          </Button>
-        </div>
-
-        <input bind:this={backupFileInput} type="file" accept=".json,application/json" class="hidden" on:change={handleRestoreFromFile} />
-      </SurfaceCard>
-    </div>
+      <input bind:this={backupFileInput} type="file" accept=".json,application/json" class="hidden" on:change={handleRestoreFromFile} />
+    </SurfaceCard>
   </div>
 </div>

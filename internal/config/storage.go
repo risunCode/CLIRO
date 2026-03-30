@@ -29,11 +29,11 @@ type AppSettings struct {
 	AutoStartProxy    bool                `json:"autoStartProxy"`
 	ProxyAPIKey       string              `json:"proxyApiKey,omitempty"`
 	AuthorizationMode bool                `json:"authorizationMode,omitempty"`
-	StreamMode        string              `json:"streamMode,omitempty"`
 	SchedulingMode    string              `json:"schedulingMode,omitempty"`
 	CircuitBreaker    bool                `json:"circuitBreaker,omitempty"`
 	CircuitSteps      []int               `json:"circuitSteps,omitempty"`
 	Cloudflared       CloudflaredSettings `json:"cloudflared,omitempty"`
+	ModelAliases      map[string]string   `json:"modelAliases,omitempty"`
 }
 
 // NewStorage creates a new multi-file storage manager
@@ -57,7 +57,6 @@ func defaultAppSettings() AppSettings {
 		ProxyPort:      defaultProxyPort,
 		AllowLAN:       false,
 		AutoStartProxy: true,
-		StreamMode:     string(StreamModeEnabled),
 		SchedulingMode: string(SchedulingModeBalance),
 		CircuitBreaker: false,
 		CircuitSteps:   defaultCircuitSteps(),

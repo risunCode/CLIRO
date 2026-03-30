@@ -9,7 +9,11 @@ import (
 	"cliro-go/internal/adapter/decode"
 	"cliro-go/internal/adapter/encode"
 	"cliro-go/internal/adapter/ir"
+	"cliro-go/internal/adapter/rules"
 	"cliro-go/internal/protocol/anthropic"
+	"cliro-go/internal/provider"
+	kiroprovider "cliro-go/internal/provider/kiro"
+	"cliro-go/internal/route"
 )
 
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +40,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		s.writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "invalid JSON")
 		return
 	}
-	req.Stream = s.resolveStreamFlag(req.Model, string(ir.EndpointAnthropicMessages), req.Stream)
+	req.Stream = s.resolveStreamFlag(req.Stream)
 	s.logRequestEvent("info", requestID, "accepted", fmt.Sprintf("route=%q", "anthropic_messages"), fmt.Sprintf("model=%q", strings.TrimSpace(req.Model)), fmt.Sprintf("stream=%t", req.Stream))
 
 	s.processAnthropicMessages(w, r, requestID, req)
@@ -50,6 +54,16 @@ func (s *Server) processAnthropicMessages(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Check if we should use live streaming for Kiro provider
+	resolution, resolveErr := s.resolveModelForStreaming(irRequest.Model)
+	useLiveStreaming := req.Stream && resolveErr == nil && resolution.Provider == "kiro"
+
+	if useLiveStreaming {
+		s.processAnthropicMessagesLiveStream(w, r, requestID, req, irRequest)
+		return
+	}
+
+	// Fallback to buffered streaming
 	irResponse, status, message, execErr := s.executeRequest(r.Context(), irRequest)
 	if execErr != nil {
 		s.logRequestEvent("warn", requestID, "failed", fmt.Sprintf("route=%q", "anthropic_messages"), fmt.Sprintf("status=%d", status), fmt.Sprintf("reason=%q", message))
@@ -88,20 +102,26 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 	}
 
 	messageID := "msg_" + newSSEID()
+	if strings.HasPrefix(strings.TrimSpace(response.ID), "msg_") {
+		messageID = strings.TrimSpace(response.ID)
+	}
 	model := firstNonEmpty(strings.TrimSpace(requestedModel), strings.TrimSpace(response.Model))
 
 	thinkingPresent := strings.TrimSpace(response.Thinking) != ""
 	textPresent := strings.TrimSpace(response.Text) != ""
 	thinkingSignature := ""
 	if thinkingPresent {
-		thinkingSignature = generateThinkingSignature()
+		thinkingSignature = encode.StableThinkingSignature(response.Thinking)
+		if strings.TrimSpace(response.ThinkingSignature) != "" {
+			thinkingSignature = strings.TrimSpace(response.ThinkingSignature)
+		}
 	}
 	contentBlocks := make([]map[string]any, 0, 2+len(response.ToolCalls))
 	if thinkingPresent {
 		contentBlocks = append(contentBlocks, map[string]any{
 			"type":      "thinking",
 			"thinking":  "",
-			"signature": thinkingSignature,
+			"signature": "",
 		})
 	}
 	if textPresent {
@@ -145,7 +165,7 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 			"stop_reason":   nil,
 			"stop_sequence": nil,
 			"usage": map[string]int{
-				"input_tokens":  response.Usage.PromptTokens,
+				"input_tokens":  anthropicStreamInputTokens(response.Usage),
 				"output_tokens": 0,
 			},
 		},
@@ -163,7 +183,7 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 			"content_block": map[string]any{
 				"type":      "thinking",
 				"thinking":  "",
-				"signature": thinkingSignature,
+				"signature": "",
 			},
 		})
 		flusher.Flush()
@@ -174,6 +194,11 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 			writeAnthropicSSEEvent(w, event["type"].(string), event)
 			flusher.Flush()
 		}
+
+		signatureEvent := encode.IRStreamToAnthropicEvent(ir.Event{SignatureDelta: thinkingSignature})
+		signatureEvent["index"] = thinkingIndex
+		writeAnthropicSSEEvent(w, signatureEvent["type"].(string), signatureEvent)
+		flusher.Flush()
 
 		writeAnthropicSSEEvent(w, "content_block_stop", map[string]any{"type": "content_block_stop", "index": thinkingIndex})
 		flusher.Flush()
@@ -229,10 +254,7 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 		})
 		flusher.Flush()
 
-		arguments := strings.TrimSpace(toolCall.Arguments)
-		if arguments == "" {
-			arguments = "{}"
-		}
+		arguments := anthropicToolArgumentsJSON(toolCall)
 		writeAnthropicSSEEvent(w, "content_block_delta", map[string]any{
 			"type":  "content_block_delta",
 			"index": toolIndex,
@@ -247,8 +269,193 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 		flusher.Flush()
 	}
 
+	stopReason := anthropicStreamStopReason(response.StopReason, len(response.ToolCalls) > 0)
+
+	writeAnthropicSSEEvent(w, "message_delta", map[string]any{
+		"type": "message_delta",
+		"delta": map[string]any{
+			"stop_reason":   stopReason,
+			"stop_sequence": nil,
+		},
+		"usage": map[string]int{
+			"output_tokens": anthropicStreamOutputTokens(response.Usage),
+		},
+	})
+	flusher.Flush()
+
+	writeAnthropicSSEEvent(w, "message_stop", map[string]any{"type": "message_stop"})
+	flusher.Flush()
+}
+
+func (s *Server) resolveModelForStreaming(model string) (struct {
+	Provider string
+	Model    string
+}, error) {
+	aliases := s.store.ModelAliases()
+	resolution, err := route.ResolveModel(model, route.DefaultThinkingSuffix, aliases)
+	if err != nil {
+		return struct {
+			Provider string
+			Model    string
+		}{}, err
+	}
+	return struct {
+		Provider string
+		Model    string
+	}{Provider: string(resolution.Provider), Model: resolution.ResolvedModel}, nil
+}
+
+func (s *Server) processAnthropicMessagesLiveStream(w http.ResponseWriter, r *http.Request, requestID string, req anthropic.MessagesRequest, irRequest ir.Request) {
+	// Setup SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.writeAnthropicError(w, http.StatusInternalServerError, "api_error", "streaming not supported")
+		return
+	}
+
+	// Prepare message metadata
+	messageID := "msg_" + newSSEID()
+	model := firstNonEmpty(strings.TrimSpace(req.Model), strings.TrimSpace(irRequest.Model))
+
+	// State tracking for live streaming
+	var thinkingStarted bool
+	var textStarted bool
+	var thinkingIndex int
+	var textIndex int
+	nextIndex := 0
+	var promptTokens, completionTokens int
+
+	// Send message_start
+	writeAnthropicSSEEvent(w, "message_start", map[string]any{
+		"type": "message_start",
+		"message": map[string]any{
+			"id":        messageID,
+			"type":     "message",
+			"role":     "assistant",
+			"model":         model,
+			"content":       []any{},
+			"stop_reason":   nil,
+			"stop_sequence": nil,
+			"usage": map[string]int{
+				"input_tokens":  0,
+				"output_tokens": 0,
+			},
+		},
+	})
+	flusher.Flush()
+
+	// Execute with streaming callback
+	chatReq := provider.ChatRequest{
+		Model:       irRequest.Model,
+		RouteFamily: string(irRequest.Endpoint),
+	}
+
+	outcome, status, message, execErr := s.kiro.(*kiroprovider.Service).CompleteWithCallback(r.Context(), chatReq, func(event kiroprovider.StreamEvent) {
+		// Handle thinking delta
+		if event.Thinking != "" {
+			if !thinkingStarted {
+				thinkingIndex = nextIndex
+				nextIndex++
+				thinkingStarted = true
+
+				writeAnthropicSSEEvent(w, "content_block_start", map[string]any{
+					"type":  "content_block_start",
+					"index": thinkingIndex,
+					"content_block": map[string]any{
+						"type":      "thinking",
+						"thinking":  "",
+						"signature": "",
+					},
+				})
+				flusher.Flush()
+			}
+
+			writeAnthropicSSEEvent(w, "content_block_delta", map[string]any{
+				"type":  "content_block_delta",
+				"index": thinkingIndex,
+				"delta": map[string]any{
+					"type":    "thinking_delta",
+					"thinking": event.Thinking,
+				},
+			})
+			flusher.Flush()
+		}
+
+		// Handle text delta
+		if event.Text != "" {
+			// Close thinking block if it was open
+			if thinkingStarted && !textStarted {
+				writeAnthropicSSEEvent(w, "content_block_stop", map[string]any{
+					"type":  "content_block_stop",
+					"index": thinkingIndex,
+				})
+				flusher.Flush()
+			}
+
+			if !textStarted {
+				textIndex = nextIndex
+				nextIndex++
+				textStarted = true
+
+				writeAnthropicSSEEvent(w, "content_block_start", map[string]any{
+					"type":  "content_block_start",
+					"index": textIndex,
+					"content_block": map[string]any{
+						"type": "text",
+						"text": "",
+					},
+				})
+				flusher.Flush()
+			}
+
+			writeAnthropicSSEEvent(w, "content_block_delta", map[string]any{
+				"type":  "content_block_delta",
+				"index": textIndex,
+				"delta": map[string]any{
+					"type": "text_delta",
+					"text": event.Text,
+				},
+			})
+			flusher.Flush()
+		}
+
+		// Track usage
+		if event.Usage.PromptTokens > 0 {
+			promptTokens = event.Usage.PromptTokens
+		}
+		if event.Usage.CompletionTokens > 0 {
+			completionTokens = event.Usage.CompletionTokens
+		}
+	})
+
+	if execErr != nil {
+		s.logRequestEvent("warn", requestID, "failed", fmt.Sprintf("route=%q", "anthropic_messages"), fmt.Sprintf("status=%d", status), fmt.Sprintf("reason=%q", message))
+		// Can't send error after SSE started, just close stream
+		return
+	}
+
+	// Close any open content blocks
+	if textStarted {
+		writeAnthropicSSEEvent(w, "content_block_stop", map[string]any{
+			"type":  "content_block_stop",
+			"index": textIndex,
+		})
+		flusher.Flush()
+	} else if thinkingStarted {
+		writeAnthropicSSEEvent(w, "content_block_stop", map[string]any{
+			"type":  "content_block_stop",
+			"index": thinkingIndex,
+		})
+		flusher.Flush()
+	}
+
+	// Send message_delta with stop reason
 	stopReason := "end_turn"
-	if len(response.ToolCalls) > 0 {
+	if len(outcome.ToolUses) > 0 {
 		stopReason = "tool_use"
 	}
 
@@ -259,13 +466,18 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 			"stop_sequence": nil,
 		},
 		"usage": map[string]int{
-			"output_tokens": response.Usage.CompletionTokens,
+			"output_tokens": completionTokens,
 		},
 	})
 	flusher.Flush()
 
-	writeAnthropicSSEEvent(w, "message_stop", map[string]any{"type": "message_stop"})
+	// Send message_stop
+	writeAnthropicSSEEvent(w, "message_stop", map[string]any{
+		"type": "message_stop",
+	})
 	flusher.Flush()
+
+	s.logRequestEvent("info", requestID, "completed", fmt.Sprintf("route=%q", "anthropic_messages"), fmt.Sprintf("status=%q", "live_streaming"), fmt.Sprintf("prompt_tokens=%d", promptTokens), fmt.Sprintf("completion_tokens=%d", completionTokens))
 }
 
 func (s *Server) handleAnthropicCountTokens(w http.ResponseWriter, r *http.Request) {
@@ -361,10 +573,44 @@ func writeAnthropicSSEEvent(w http.ResponseWriter, event string, payload any) {
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", encoded)
 }
 
-func generateThinkingSignature() string {
-	raw := strings.ReplaceAll(newSSEID(), "-", "")
-	if len(raw) > 32 {
-		raw = raw[:32]
+func anthropicToolArgumentsJSON(toolCall ir.ToolCall) string {
+	input := map[string]any{}
+	arguments := strings.TrimSpace(toolCall.Arguments)
+	if arguments != "" {
+		_ = json.Unmarshal([]byte(arguments), &input)
 	}
-	return "sig_" + raw
+	input = rules.RemapToolCallArgs(toolCall.Name, input)
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+func anthropicStreamStopReason(stopReason string, hasToolCalls bool) string {
+	if hasToolCalls {
+		return "tool_use"
+	}
+	switch strings.TrimSpace(stopReason) {
+	case "", "stop", "end_turn":
+		return "end_turn"
+	case "tool_calls", "tool_use":
+		return "tool_use"
+	default:
+		return strings.TrimSpace(stopReason)
+	}
+}
+
+func anthropicStreamInputTokens(usage ir.Usage) int {
+	if usage.InputTokens > 0 {
+		return usage.InputTokens
+	}
+	return usage.PromptTokens
+}
+
+func anthropicStreamOutputTokens(usage ir.Usage) int {
+	if usage.OutputTokens > 0 {
+		return usage.OutputTokens
+	}
+	return usage.CompletionTokens
 }

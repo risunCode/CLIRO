@@ -105,6 +105,41 @@ func TestBuildRequestPayload_FromAnthropicFlowDoesNotEmitAssistantInputText(t *t
 	}
 }
 
+func TestCollectCompletion_DecodesFunctionCallsAndRemapsArgs(t *testing.T) {
+	service := &Service{}
+	body := strings.NewReader(strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"working"}`,
+		``,
+		`data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_1","name":"Grep","arguments":"{\"query\":\"needle\",\"paths\":[\"src\"]}"}}`,
+		``,
+		`data: {"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":4,"output_tokens":6,"total_tokens":10}}}`,
+		``,
+	}, "\n"))
+
+	out, err := service.collectCompletion(body, "gpt-5.4")
+	if err != nil {
+		t.Fatalf("collectCompletion: %v", err)
+	}
+	if out.Text != "working" {
+		t.Fatalf("text = %q", out.Text)
+	}
+	if len(out.ToolUses) != 1 {
+		t.Fatalf("tool uses = %#v", out.ToolUses)
+	}
+	if out.ToolUses[0].ID != "call_1" || out.ToolUses[0].Name != "Grep" {
+		t.Fatalf("unexpected tool use: %#v", out.ToolUses[0])
+	}
+	if out.ToolUses[0].Input["pattern"] != "needle" || out.ToolUses[0].Input["path"] != "src" {
+		t.Fatalf("remapped args = %#v", out.ToolUses[0].Input)
+	}
+	if _, exists := out.ToolUses[0].Input["query"]; exists {
+		t.Fatalf("unexpected query key in %#v", out.ToolUses[0].Input)
+	}
+	if out.Usage.TotalTokens != 10 {
+		t.Fatalf("usage = %#v", out.Usage)
+	}
+}
+
 func containsAll(body string, fragments ...string) bool {
 	for _, fragment := range fragments {
 		if !strings.Contains(body, fragment) {

@@ -58,6 +58,10 @@ export function GetLogs(arg1) {
   return window['go']['main']['App']['GetLogs'](arg1);
 }
 
+export function GetModelAliases() {
+  return window['go']['main']['App']['GetModelAliases']();
+}
+
 export function GetProxyStatus() {
   return window['go']['main']['App']['GetProxyStatus']();
 }
@@ -132,6 +136,10 @@ export function SetCircuitSteps(arg1) {
 
 export function SetCloudflaredConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetCloudflaredConfig'](arg1, arg2, arg3);
+}
+
+export function SetModelAliases(arg1) {
+  return window['go']['main']['App']['SetModelAliases'](arg1);
 }
 
 export function SetProxyAPIKey(arg1) {

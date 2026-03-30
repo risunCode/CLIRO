@@ -20,11 +20,11 @@ func TestSyncClaudeCodeWritesSettingsAndOnboarding(t *testing.T) {
 	home := t.TempDir()
 	service := newTestService(home)
 
-	result, err := service.Sync(AppClaudeCode, "http://127.0.0.1:8095", "sk-cliro_test", "claude-sonnet-4.5")
+	result, err := service.Sync(AppClaudeCode, "http://127.0.0.1:8095/v1", "sk-cliro_test", "gpt-5.3-codex")
 	if err != nil {
 		t.Fatalf("sync claude code: %v", err)
 	}
-	if result.CurrentBaseURL != "http://127.0.0.1:8095" {
+	if result.CurrentBaseURL != "http://127.0.0.1:8095/v1" {
 		t.Fatalf("base url = %q", result.CurrentBaseURL)
 	}
 
@@ -34,13 +34,13 @@ func TestSyncClaudeCodeWritesSettingsAndOnboarding(t *testing.T) {
 		t.Fatalf("read settings: %v", err)
 	}
 	text := string(settingsData)
-	if !strings.Contains(text, `"ANTHROPIC_BASE_URL": "http://127.0.0.1:8095"`) {
+	if !strings.Contains(text, `"ANTHROPIC_BASE_URL": "http://127.0.0.1:8095/v1"`) {
 		t.Fatalf("expected anthropic base url in settings: %s", text)
 	}
 	if !strings.Contains(text, `"ANTHROPIC_API_KEY": "sk-cliro_test"`) {
 		t.Fatalf("expected api key in settings: %s", text)
 	}
-	if !strings.Contains(text, `"model": "claude-sonnet-4.5"`) {
+	if !strings.Contains(text, `"model": "gpt-5.3-codex"`) {
 		t.Fatalf("expected model in settings: %s", text)
 	}
 
@@ -100,7 +100,7 @@ func TestSyncOpenCodeWritesConfigFile(t *testing.T) {
 	home := t.TempDir()
 	service := newTestService(home)
 
-	result, err := service.Sync(AppOpenCode, "http://127.0.0.1:8095", "sk-cliro_test", "claude-sonnet-4.5")
+	result, err := service.Sync(AppOpenCode, "http://127.0.0.1:8095", "sk-cliro_test", "gpt-5.3-codex")
 	if err != nil {
 		t.Fatalf("sync opencode: %v", err)
 	}
@@ -120,46 +120,8 @@ func TestSyncOpenCodeWritesConfigFile(t *testing.T) {
 	if !strings.Contains(configText, `"apiKey": "sk-cliro_test"`) {
 		t.Fatalf("expected api key in opencode config: %s", configText)
 	}
-	if !strings.Contains(configText, `"claude-sonnet-4.5": {`) {
+	if !strings.Contains(configText, `"gpt-5.3-codex": {`) {
 		t.Fatalf("expected model entry in opencode config: %s", configText)
-	}
-}
-
-func TestSyncGeminiCLIWritesEnvAndSettings(t *testing.T) {
-	home := t.TempDir()
-	service := newTestService(home)
-
-	result, err := service.Sync(AppGeminiCLI, "http://127.0.0.1:8095", "sk-cliro_test", "claude-sonnet-4.5")
-	if err != nil {
-		t.Fatalf("sync gemini cli: %v", err)
-	}
-	if result.CurrentBaseURL != "http://127.0.0.1:8095" {
-		t.Fatalf("base url = %q", result.CurrentBaseURL)
-	}
-
-	envPath := filepath.Join(home, ".gemini", ".env")
-	envData, err := os.ReadFile(envPath)
-	if err != nil {
-		t.Fatalf("read env file: %v", err)
-	}
-	envText := string(envData)
-	if !strings.Contains(envText, "GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8095") {
-		t.Fatalf("expected base url in env file: %s", envText)
-	}
-	if !strings.Contains(envText, "GEMINI_API_KEY=sk-cliro_test") {
-		t.Fatalf("expected api key in env file: %s", envText)
-	}
-	if !strings.Contains(envText, "GOOGLE_GEMINI_MODEL=claude-sonnet-4.5") {
-		t.Fatalf("expected model in env file: %s", envText)
-	}
-
-	settingsPath := filepath.Join(home, ".gemini", "settings.json")
-	settingsData, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("read settings file: %v", err)
-	}
-	if !strings.Contains(string(settingsData), `"selectedType": "gemini-api-key"`) {
-		t.Fatalf("expected selectedType in settings file: %s", string(settingsData))
 	}
 }
 
@@ -167,18 +129,18 @@ func TestStatusesReflectSyncedBaseURLs(t *testing.T) {
 	home := t.TempDir()
 	service := newTestService(home)
 
-	if _, err := service.Sync(AppClaudeCode, "http://127.0.0.1:8095", "sk-cliro_test", "claude-sonnet-4.5"); err != nil {
+	if _, err := service.Sync(AppClaudeCode, "http://127.0.0.1:8095/v1", "sk-cliro_test", "gpt-5.3-codex"); err != nil {
 		t.Fatalf("sync claude code: %v", err)
 	}
 	if _, err := service.Sync(AppCodexAI, "http://127.0.0.1:8095", "sk-cliro_test", "gpt-5.3-codex"); err != nil {
 		t.Fatalf("sync codex ai: %v", err)
 	}
 
-	statuses, err := service.Statuses("http://127.0.0.1:8095")
+	statuses, err := service.Statuses("http://127.0.0.1:8095/v1")
 	if err != nil {
 		t.Fatalf("statuses: %v", err)
 	}
-	if len(statuses) != 4 {
+	if len(statuses) != 3 {
 		t.Fatalf("status count = %d", len(statuses))
 	}
 	if !statuses[0].Synced || !statuses[2].Synced {
@@ -194,11 +156,11 @@ func TestStatusesMarkInstalledWhenConfigFilesExist(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir settings dir: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte(`{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:8095"},"model":"claude-sonnet-4.5"}`), 0o600); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(`{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:8095/v1"},"model":"gpt-5.3-codex"}`), 0o600); err != nil {
 		t.Fatalf("write settings file: %v", err)
 	}
 
-	statuses, err := service.Statuses("http://127.0.0.1:8095")
+	statuses, err := service.Statuses("http://127.0.0.1:8095/v1")
 	if err != nil {
 		t.Fatalf("statuses: %v", err)
 	}
@@ -219,11 +181,11 @@ func TestGetInstallStatus_UsesCacheUntilExpired(t *testing.T) {
 	now := time.Unix(1000, 0)
 	service.nowFn = func() time.Time { return now }
 
-	installed, _ := service.getInstallStatus("claude")
+	installed, _, _ := service.getInstallStatus("claude", false)
 	if !installed {
 		t.Fatalf("expected installed result")
 	}
-	installed, _ = service.getInstallStatus("claude")
+	installed, _, _ = service.getInstallStatus("claude", false)
 	if !installed {
 		t.Fatalf("expected cached installed result")
 	}
@@ -232,11 +194,19 @@ func TestGetInstallStatus_UsesCacheUntilExpired(t *testing.T) {
 	}
 
 	now = now.Add(installProbeCacheTTL + time.Second)
-	installed, _ = service.getInstallStatus("claude")
+	installed, _, _ = service.getInstallStatus("claude", false)
 	if !installed {
 		t.Fatalf("expected installed result after cache expiry")
 	}
 	if lookups != 2 {
 		t.Fatalf("expected second lookup after cache expiry, got %d", lookups)
+	}
+
+	installed, _, _ = service.getInstallStatus("claude", true)
+	if !installed {
+		t.Fatalf("expected installed result with force refresh")
+	}
+	if lookups != 3 {
+		t.Fatalf("expected forced lookup to bypass cache, got %d", lookups)
 	}
 }

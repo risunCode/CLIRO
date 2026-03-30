@@ -64,6 +64,10 @@ func ValidateToolRules(request ir.Request, capability ProviderCapability) error 
 func ValidateThinkingRules(request ir.Request, capability ProviderCapability) error {
 	hasThinking := false
 	for _, message := range request.Messages {
+		if len(message.ThinkingBlocks) > 0 {
+			hasThinking = true
+			break
+		}
 		if message.Role == ir.RoleAssistant {
 			continue
 		}

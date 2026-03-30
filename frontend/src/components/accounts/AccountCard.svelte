@@ -2,7 +2,7 @@
   import { Clock, Zap } from 'lucide-svelte'
   import AccountActions from '@/components/accounts/AccountActions.svelte'
   import ProviderAvatar from '@/components/accounts/ProviderAvatar.svelte'
-  import type { Account } from '@/services/wails-api'
+  import type { Account } from '@/features/accounts/types'
   import {
     formatBucketLabel,
     formatMetricValue,
@@ -12,8 +12,8 @@
     getPercentColor,
     hasValidReset,
     metricPercent
-  } from '@/utils/account-quota'
-  import { normalizeProviderID, providerMeta } from '@/utils/account'
+  } from '@/features/accounts/lib/account-quota'
+  import { normalizeProviderID, providerMeta } from '@/features/accounts/lib/account'
 
 export let account: Account
 export let selected = false

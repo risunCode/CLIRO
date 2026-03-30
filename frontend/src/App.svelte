@@ -1,38 +1,30 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import AppHeader from '@/components/common/AppHeader.svelte'
-  import AppFooter from '@/components/common/AppFooter.svelte'
-  import ConfigurationErrorModal from '@/components/common/ConfigurationErrorModal.svelte'
-  import ToastViewport from '@/components/common/ToastViewport.svelte'
-  import UpdatePromptModal from '@/components/common/UpdatePromptModal.svelte'
-  import DashboardTab from '@/tabs/DashboardTab.svelte'
-  import AccountsTab from '@/tabs/AccountsTab.svelte'
-  import ApiRouterTab from '@/tabs/ApiRouterTab.svelte'
-  import UsageTab from '@/tabs/UsageTab.svelte'
-  import SystemLogsTab from '@/tabs/SystemLogsTab.svelte'
-  import SettingsTab from '@/tabs/SettingsTab.svelte'
-  import { theme, toggleTheme } from '@/stores/theme'
-  import { toastStore } from '@/stores/toast'
-  import { getErrorMessage } from '@/services/error'
-  import {
-    appService,
-    type Account,
-    type AppState,
-    type AuthSession,
-    type CliSyncAppID,
-    type CliSyncResult,
-    type KiroAuthSession,
-    type LogEntry,
-    type ProxyStatus,
-    type KiloAuthSyncResult,
-    type OpencodeAuthSyncResult,
-    type CodexAuthSyncResult,
-    type UpdateInfo
-  } from '@/services/wails-api'
-  import { createAuthSessionController } from '@/services/auth-session'
-  import { subscribeToRingLogs } from '@/services/logs-subscription'
-  import type { AppTabId } from '@/utils/tabs'
-  import { downloadJSONFile } from '@/utils/browser'
+  import { logsApi } from '@/app/api/logs-api'
+  import { systemApi } from '@/app/api/system-api'
+  import AppOverlayStack from '@/app/providers/AppOverlayStack.svelte'
+  import AppFrame from '@/app/shell/AppFrame.svelte'
+  import { mapStartupWarnings, type StartupWarningEntry } from '@/app/services/startup-warnings'
+  import type { AppState, LogEntry, UpdateInfo } from '@/app/types'
+  import { accountsApi } from '@/features/accounts/api/accounts-api'
+  import { accountsAuthApi } from '@/features/accounts/api/auth-api'
+  import type {
+    Account,
+    AuthSession,
+    CodexAuthSyncResult,
+    KiloAuthSyncResult,
+    KiroAuthSession,
+    OpencodeAuthSyncResult
+  } from '@/features/accounts/types'
+  import { routerApi } from '@/features/router/api/router-api'
+  import type { CliSyncAppID, CliSyncResult, ProxyStatus } from '@/features/router/types'
+  import { theme, toggleTheme } from '@/shared/stores/theme'
+  import { toastStore } from '@/shared/stores/toast'
+  import { getErrorMessage } from '@/shared/lib/error'
+  import { createAuthSessionController } from '@/features/accounts/lib/auth-session'
+  import { subscribeToRingLogs } from '@/app/services/logs-subscription'
+  import type { AppTabId } from '@/app/lib/tabs'
+  import { downloadJSONFile } from '@/shared/lib/browser'
   import { EventsOn } from '../wailsjs/runtime/runtime'
 
   let activeTab: AppTabId = 'dashboard'
@@ -56,7 +48,7 @@
   let showUpdatePrompt = false
   let showConfigurationErrorModal = false
   let startupWarningsShown = false
-  let startupWarnings: Array<{ code: string; filePath: string; backupPath?: string; message: string }> = []
+  let startupWarnings: StartupWarningEntry[] = []
 
   interface AppActionToast {
     title: string
@@ -116,7 +108,7 @@
   }
 
   const currentBatchBehavior = (): BatchBehaviorMode => {
-    return state?.batchBehavior === 'sequential' ? 'sequential' : 'parallel'
+    return 'parallel'
   }
 
   const runBulkAccountMutation = async (
@@ -171,13 +163,13 @@
   }
 
   const refreshState = async (): Promise<void> => {
-    const nextState = await appService.getState()
+    const nextState = await systemApi.getState()
     state = nextState
     syncStartupWarnings(nextState)
   }
 
   const refreshAccounts = async (): Promise<void> => {
-    accounts = await appService.getAccounts()
+    accounts = await accountsApi.getAccounts()
   }
 
   const refreshAccountsState = async (): Promise<void> => {
@@ -193,11 +185,11 @@
   }
 
   const refreshProxyStatus = async (): Promise<void> => {
-    proxyStatus = await appService.getProxyStatus()
+    proxyStatus = await routerApi.getProxyStatus()
   }
 
   const refreshCloudflaredStatus = async (): Promise<void> => {
-    proxyStatus = await appService.refreshCloudflaredStatus()
+    proxyStatus = await routerApi.refreshCloudflaredStatus()
   }
 
   const refreshProxyStatusSafe = async (): Promise<void> => {
@@ -231,7 +223,7 @@
   const refreshLogs = async (limit = 400): Promise<void> => {
     loadingLogs = true
     try {
-      logs = await appService.getLogs(limit)
+      logs = await logsApi.getLogs(limit)
     } finally {
       loadingLogs = false
     }
@@ -241,9 +233,9 @@
     loadingDashboard = true
     try {
       const [nextState, nextAccounts, nextProxyStatus] = await Promise.all([
-        appService.getState(),
-        appService.getAccounts(),
-        appService.getProxyStatus()
+        systemApi.getState(),
+        accountsApi.getAccounts(),
+        routerApi.getProxyStatus()
       ])
       state = nextState
       syncStartupWarnings(nextState)
@@ -262,25 +254,8 @@
     toastStore.push('success', title, message)
   }
 
-  const appendLocalLog = (level: 'info' | 'warn' | 'error', scope: string, message: string): void => {
-    const entry: LogEntry = {
-      timestamp: Date.now(),
-      level,
-      scope,
-      message
-    }
-    logs = [...logs, entry].slice(-(state?.logMaxEntries || 1000))
-  }
-
   const syncStartupWarnings = (nextState: AppState | null): void => {
-    const nextWarnings = Array.isArray(nextState?.startupWarnings)
-      ? nextState.startupWarnings.map((warning) => ({
-          code: String(warning.code || 'startup_warning'),
-          filePath: String(warning.filePath || '-'),
-          backupPath: warning.backupPath ? String(warning.backupPath) : undefined,
-          message: String(warning.message || 'Configuration was recovered during startup.')
-        }))
-      : []
+    const nextWarnings = mapStartupWarnings(nextState)
     if (!startupWarningsShown && nextWarnings.length > 0) {
       startupWarnings = nextWarnings
       showConfigurationErrorModal = true
@@ -341,10 +316,6 @@
     }
   }
 
-  const onTabChange = (event: CustomEvent<AppTabId>): void => {
-    activeTab = event.detail
-  }
-
   const runProxyAction = async (title: string, action: () => Promise<void>, doneMessage: string): Promise<void> => {
     await withBusyFlag(
       (busy) => {
@@ -370,7 +341,7 @@
   const handleToggleAccount = async (accountId: string, enabled: boolean): Promise<void> => {
     await withAccountBusy(accountId, async () => {
       await runAppAction({
-        action: () => appService.toggleAccount(accountId, enabled),
+        action: () => accountsApi.toggleAccount(accountId, enabled),
         refresh: refreshAccountsState,
         successToast: {
           title: 'Account Updated',
@@ -387,7 +358,7 @@
       return
     }
 
-    const result = await runBulkAccountMutation(uniqueIDs, (accountId) => appService.toggleAccount(accountId, enabled))
+    const result = await runBulkAccountMutation(uniqueIDs, (accountId) => accountsApi.toggleAccount(accountId, enabled))
     await refreshAccountsState()
 
     const successCount = result.total - result.failures.length
@@ -402,7 +373,7 @@
   const handleRefreshAccountWithQuota = async (accountId: string): Promise<void> => {
     await withAccountBusy(accountId, async () => {
       await runAppAction({
-        action: () => appService.refreshAccountWithQuota(accountId),
+        action: () => accountsApi.refreshAccountWithQuota(accountId),
         successToast: {
           title: 'Account Refreshed',
           message: 'Quota checked. Token refreshed only when expired.'
@@ -417,7 +388,7 @@
   const handleDeleteAccount = async (accountId: string): Promise<void> => {
     await withAccountBusy(accountId, async () => {
       await runAppAction({
-        action: () => appService.deleteAccount(accountId),
+        action: () => accountsApi.deleteAccount(accountId),
         refresh: refreshAccountsState,
         successToast: {
           title: 'Account Deleted',
@@ -434,7 +405,7 @@
       return
     }
 
-    const result = await runBulkAccountMutation(uniqueIDs, (accountId) => appService.deleteAccount(accountId))
+    const result = await runBulkAccountMutation(uniqueIDs, (accountId) => accountsApi.deleteAccount(accountId))
     await refreshAccountsState()
 
     const successCount = result.total - result.failures.length
@@ -448,7 +419,7 @@
 
   const handleImportAccounts = async (importedAccounts: Account[]): Promise<number> => {
     const count = await runAppAction<number>({
-      action: () => appService.importAccounts(importedAccounts),
+      action: () => accountsApi.importAccounts(importedAccounts),
       refresh: refreshAccountsState,
       onSuccess: (importedCount) => {
         notifySuccess('Accounts Imported', `${importedCount} account(s) imported successfully.`)
@@ -462,7 +433,7 @@
   const handleRefreshAllQuotas = async (): Promise<void> => {
     await withBusyFlag(setRefreshingAllQuotas, async () => {
       await runAppAction({
-        action: () => appService.refreshAllQuotas(),
+        action: () => accountsApi.refreshAllQuotas(),
         successToast: {
           title: 'Quotas Refreshed',
           message: 'Eligible account quota snapshots were refreshed. Exhausted accounts still waiting for reset were skipped.'
@@ -477,7 +448,7 @@
   const handleForceRefreshAllQuotas = async (): Promise<void> => {
     await withBusyFlag(setRefreshingAllQuotas, async () => {
       await runAppAction({
-        action: () => appService.forceRefreshAllQuotas(),
+        action: () => accountsApi.forceRefreshAllQuotas(),
         successToast: {
           title: 'Quotas Force Refreshed',
           message: 'Every configured account quota snapshot was refreshed, including accounts normally skipped by smart refresh.'
@@ -492,7 +463,7 @@
   const handleSyncCodexAccountToKiloAuth = async (accountId: string): Promise<KiloAuthSyncResult> => {
     return withAccountBusy(accountId, async () => {
       return runAppAction<KiloAuthSyncResult>({
-        action: () => appService.syncCodexAccountToKiloAuth(accountId),
+        action: () => accountsApi.syncCodexAccountToKiloAuth(accountId),
         onSuccess: (result) => {
           notifySuccess('Kilo CLI Synced', `Auth file updated at ${result.targetPath}.`)
         },
@@ -505,7 +476,7 @@
   const handleSyncCodexAccountToCodexCLI = async (accountId: string): Promise<CodexAuthSyncResult> => {
     return withAccountBusy(accountId, async () => {
       return runAppAction<CodexAuthSyncResult>({
-        action: () => appService.syncCodexAccountToCodexCLI(accountId),
+        action: () => accountsApi.syncCodexAccountToCodexCLI(accountId),
         onSuccess: (result) => {
           notifySuccess('Codex CLI Synced', `Auth file updated at ${result.targetPath}.`)
         },
@@ -518,7 +489,7 @@
   const handleSyncCodexAccountToOpencodeAuth = async (accountId: string): Promise<OpencodeAuthSyncResult> => {
     return withAccountBusy(accountId, async () => {
       return runAppAction<OpencodeAuthSyncResult>({
-        action: () => appService.syncCodexAccountToOpencodeAuth(accountId),
+        action: () => accountsApi.syncCodexAccountToOpencodeAuth(accountId),
         onSuccess: (result) => {
           notifySuccess('Opencode Synced', `Auth file updated at ${result.targetPath}.`)
         },
@@ -529,7 +500,7 @@
   }
 
   const authController = createAuthSessionController({
-    getSession: (sessionId) => appService.getCodexAuthSession(sessionId),
+    getSession: (sessionId) => accountsAuthApi.getCodexAuthSession(sessionId),
     onSession: (session) => {
       authSession = session
     },
@@ -545,7 +516,7 @@
   })
 
   const kiroAuthController = createAuthSessionController({
-    getSession: (sessionId) => appService.getKiroAuthSession(sessionId),
+    getSession: (sessionId) => accountsAuthApi.getKiroAuthSession(sessionId),
     onSession: (session) => {
       kiroAuthSession = session
     },
@@ -570,7 +541,7 @@
 
     await withBusyFlag(setAuthWorking, async () => {
       const started = await runAppAction({
-        action: () => appService.startCodexAuth(),
+        action: () => accountsAuthApi.startCodexAuth(),
         errorTitle: 'Authentication Start Failed'
       })
 
@@ -596,8 +567,8 @@
     }
 
     await withBusyFlag(setAuthWorking, async () => {
-      const started = await runAppAction<Awaited<ReturnType<typeof appService.startKiroAuth>>>({
-        action: () => (method === 'device' ? appService.startKiroAuth() : appService.startKiroSocialAuth(method)),
+      const started = await runAppAction<Awaited<ReturnType<typeof accountsAuthApi.startKiroAuth>>>({
+        action: () => (method === 'device' ? accountsAuthApi.startKiroAuth() : accountsAuthApi.startKiroSocialAuth(method)),
         errorTitle: 'Kiro Authentication Start Failed',
         rethrow: true
       })
@@ -625,7 +596,7 @@
   const handleSetAllowLAN = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Proxy Network Mode Updated',
-      () => appService.setAllowLAN(enabled),
+      () => routerApi.setAllowLAN(enabled),
       enabled ? 'Proxy now accepts LAN traffic.' : 'Proxy now listens only on localhost.'
     )
   }
@@ -633,13 +604,13 @@
   const handleSetAutoStartProxy = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Proxy Startup Updated',
-      () => appService.setAutoStartProxy(enabled),
+      () => routerApi.setAutoStartProxy(enabled),
       enabled ? 'Proxy will start automatically on app launch.' : 'Proxy autostart disabled.'
     )
   }
 
   const handleSetProxyAPIKey = async (apiKey: string): Promise<void> => {
-    await runProxyAction('Proxy API Key Updated', () => appService.setProxyAPIKey(apiKey), 'Proxy API key has been updated.')
+    await runProxyAction('Proxy API Key Updated', () => routerApi.setProxyAPIKey(apiKey), 'Proxy API key has been updated.')
   }
 
   const handleRegenerateProxyAPIKey = async (): Promise<string> => {
@@ -649,7 +620,7 @@
       },
       async () => {
         const apiKey = await runAppAction<string>({
-          action: () => appService.regenerateProxyAPIKey(),
+          action: () => routerApi.regenerateProxyAPIKey(),
           refresh: async () => {
             await Promise.all([refreshState(), refreshProxyStatus()])
           },
@@ -669,7 +640,7 @@
   const handleSetAuthorizationMode = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Authorization Mode Updated',
-      () => appService.setAuthorizationMode(enabled),
+      () => routerApi.setAuthorizationMode(enabled),
       enabled ? 'All proxy routes now require the configured API key.' : 'Proxy routes are open again unless a client sends its own API key header.'
     )
   }
@@ -680,13 +651,13 @@
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
 
-    await runProxyAction('Scheduling Mode Updated', () => appService.setSchedulingMode(mode), `${label} routing mode is now active.`)
+    await runProxyAction('Scheduling Mode Updated', () => routerApi.setSchedulingMode(mode), `${label} routing mode is now active.`)
   }
 
   const handleSetCircuitBreaker = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Circuit Breaker Updated',
-      () => appService.setCircuitBreaker(enabled),
+      () => routerApi.setCircuitBreaker(enabled),
       enabled
         ? 'Circuit breaker backoff is enabled for repeated failures.'
         : 'Circuit breaker backoff is disabled.'
@@ -696,8 +667,16 @@
   const handleSetCircuitSteps = async (steps: number[]): Promise<void> => {
     await runProxyAction(
       'Circuit Breaker Steps Updated',
-      () => appService.setCircuitSteps(steps),
+      () => routerApi.setCircuitSteps(steps),
       `Backoff steps updated to ${steps.join('s, ')}s.`
+    )
+  }
+
+  const handleSetModelAliases = async (aliases: Record<string, string>): Promise<void> => {
+    await runProxyAction(
+    'Model Aliases Updated',
+      () => routerApi.setModelAliases(aliases),
+    `Model aliases updated (${Object.keys(aliases).length} mappings).`
     )
   }
 
@@ -708,7 +687,7 @@
       },
       async () => {
         await runAppAction({
-          action: () => appService.setCloudflaredConfig(mode, token, useHttp2),
+          action: () => routerApi.setCloudflaredConfig(mode, token, useHttp2),
           refresh: refreshProxyStatus,
           onError: async (error) => {
             notifyError('Cloudflared Config Failed', error)
@@ -720,20 +699,20 @@
   }
 
   const handleInstallCloudflared = async (): Promise<void> => {
-    await runProxyAction('Cloudflared Installed', () => appService.installCloudflared(), 'Cloudflared binary downloaded and verified.')
+    await runProxyAction('Cloudflared Installed', () => routerApi.installCloudflared(), 'Cloudflared binary downloaded and verified.')
   }
 
   const handleStartCloudflared = async (): Promise<void> => {
-    await runProxyAction('Cloudflared Started', () => appService.startCloudflared(), 'Public tunnel started for the local proxy.')
+    await runProxyAction('Cloudflared Started', () => routerApi.startCloudflared(), 'Public tunnel started for the local proxy.')
   }
 
   const handleStopCloudflared = async (): Promise<void> => {
-    await runProxyAction('Cloudflared Stopped', () => appService.stopCloudflared(), 'Public tunnel stopped.')
+    await runProxyAction('Cloudflared Stopped', () => routerApi.stopCloudflared(), 'Public tunnel stopped.')
   }
 
   const handleSyncCLIConfig = async (appId: CliSyncAppID, model: string): Promise<CliSyncResult> => {
     return runAppAction<CliSyncResult>({
-      action: () => appService.syncCLIConfig(appId, model),
+      action: () => routerApi.syncCLIConfig(appId, model),
       onSuccess: (result) => {
         const targetPath = result.files[0]?.path || result.currentBaseUrl || 'the target config'
         notifySuccess(`${result.label} Synced`, `Configuration updated at ${targetPath}.`)
@@ -781,70 +760,32 @@
 
     if (backupState) {
       restoreSteps.push({
-        label: 'Accounts auto-refresh policy',
-        run: () => appService.setAutoRefreshQuotaPolicy(String(backupState.autoRefreshQuotaPolicy || 'single'))
-      })
-      restoreSteps.push({
-        label: 'Accounts auto-refresh interval',
-        run: () => appService.setAutoRefreshMinutes(parseRestoreNumber(backupState.autoRefreshMinutes, 5))
-      })
-      restoreSteps.push({
-        label: 'Accounts visibility defaults',
-        run: () => appService.setAccountsVisibilityDefaults(backupState.showExhaustedDefault ?? true, backupState.showDisabledDefault ?? true)
-      })
-      restoreSteps.push({
-        label: 'Batch behavior',
-        run: () => appService.setBatchBehavior(String(backupState.batchBehavior || 'parallel'))
-      })
-      restoreSteps.push({
-        label: 'Log settings',
-        run: () =>
-          appService.setLogSettings(
-            parseRestoreNumber(backupState.logMaxEntries, 1000),
-            parseRestoreNumber(backupState.logFileSizeCapMb, 25),
-            String(backupState.logVerbosity || 'info')
-          )
-      })
-      restoreSteps.push({
-        label: 'Import/export policy',
-        run: () => appService.setImportExportPolicy(String(backupState.importExportPolicy || 'merge'))
-      })
-      restoreSteps.push({
-        label: 'Advanced runtime settings',
-        run: () =>
-          appService.setAdvancedSettings(
-            parseRestoreNumber(backupState.networkTimeoutSeconds, 60),
-            parseRestoreNumber(backupState.retryLimit, 3),
-            parseRestoreNumber(backupState.quotaRefreshWorkers, 4)
-          )
-      })
-      restoreSteps.push({
         label: 'Scheduling mode',
-        run: () => appService.setSchedulingMode(String(backupState.schedulingMode || 'balance'))
+        run: () => routerApi.setSchedulingMode(String(backupState.schedulingMode || 'balance'))
       })
       restoreSteps.push({
         label: 'Circuit breaker',
-        run: () => appService.setCircuitBreaker(backupState.circuitBreaker ?? false)
+        run: () => routerApi.setCircuitBreaker(backupState.circuitBreaker ?? false)
       })
       restoreSteps.push({
         label: 'Circuit breaker steps',
-        run: () => appService.setCircuitSteps(Array.isArray(backupState.circuitSteps) ? backupState.circuitSteps : [10, 30, 60])
+        run: () => routerApi.setCircuitSteps(Array.isArray(backupState.circuitSteps) ? backupState.circuitSteps : [10, 30, 60])
       })
       restoreSteps.push({
         label: 'Authorization mode',
-        run: () => appService.setAuthorizationMode(backupState.authorizationMode ?? false)
+        run: () => routerApi.setAuthorizationMode(backupState.authorizationMode ?? false)
       })
       restoreSteps.push({
         label: 'LAN visibility',
-        run: () => appService.setAllowLAN(backupState.allowLan ?? false)
+        run: () => routerApi.setAllowLAN(backupState.allowLan ?? false)
       })
       restoreSteps.push({
         label: 'Proxy auto-start',
-        run: () => appService.setAutoStartProxy(backupState.autoStartProxy ?? true)
+        run: () => routerApi.setAutoStartProxy(backupState.autoStartProxy ?? true)
       })
       restoreSteps.push({
         label: 'Proxy port',
-        run: () => appService.setProxyPort(parseRestoreNumber(backupState.proxyPort, 8095))
+        run: () => routerApi.setProxyPort(parseRestoreNumber(backupState.proxyPort, 8095))
       })
     }
 
@@ -852,7 +793,7 @@
       restoreSteps.push({
         label: `Import ${backupAccounts.length} account(s)`,
         run: async () => {
-          await appService.importAccounts(backupAccounts)
+          await accountsApi.importAccounts(backupAccounts)
         }
       })
     }
@@ -882,7 +823,7 @@
     } finally {
       try {
         await refreshCore()
-        const logLimit = state?.logMaxEntries || 1000
+        const logLimit = 1000
         await refreshLogs(logLimit)
         bindLogsSubscription(logLimit)
       } catch (error) {
@@ -900,7 +841,7 @@
 
     await withBusyFlag(setAuthWorking, async () => {
       await runAppAction({
-        action: () => appService.cancelCodexAuth(authSession.sessionId),
+        action: () => accountsAuthApi.cancelCodexAuth(authSession.sessionId),
         onSuccess: () => {
           authController.stop()
           authSession = null
@@ -918,7 +859,7 @@
 
     await withBusyFlag(setAuthWorking, async () => {
       await runAppAction({
-        action: () => appService.cancelKiroAuth(kiroAuthSession.sessionId),
+        action: () => accountsAuthApi.cancelKiroAuth(kiroAuthSession.sessionId),
         onSuccess: () => {
           kiroAuthController.stop()
           kiroAuthSession = null
@@ -935,7 +876,7 @@
     }
 
     await runAppAction({
-      action: () => appService.openExternalURL(url),
+      action: () => systemApi.openExternalURL(url),
       errorTitle: 'Open URL Failed'
     })
   }
@@ -949,14 +890,14 @@
         logs = []
 
         try {
-          await appService.clearLogs()
-          const logLimit = state?.logMaxEntries || 1000
+          await logsApi.clearLogs()
+          const logLimit = 1000
           await refreshLogs(logLimit)
 
           notifySuccess('Logs Cleared', 'System logs were cleared successfully.')
         } catch (error) {
           notifyError('Clear Logs Failed', error)
-          await refreshLogs(state?.logMaxEntries || 1000)
+          await refreshLogs(1000)
         }
       }
     )
@@ -964,7 +905,7 @@
 
   const handleOpenDataDir = async (): Promise<void> => {
     await runAppAction({
-      action: () => appService.openDataDir(),
+      action: () => systemApi.openDataDir(),
       onSuccess: () => {
         toastStore.push('info', 'Data Folder', 'Opened local CLIro-Go data folder.')
       },
@@ -974,7 +915,7 @@
 
   const checkForUpdates = async (): Promise<void> => {
     try {
-      const result = await appService.getUpdateInfo()
+      const result = await systemApi.getUpdateInfo()
       if (!result.updateAvailable) {
         return
       }
@@ -1001,95 +942,6 @@
 
   let unsubscribeLogs: (() => void) | null = null
   let unsubscribeSecondInstance: (() => void) | null = null
-  let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
-  let autoRefreshIntervalMs = 0
-  let autoRefreshInFlight = false
-  let sessionAutoRefreshMinutes = 5
-  let sessionAutoRefreshInitialized = false
-
-  const isAutoRefreshQuotaCooldown = (account: Account): boolean => {
-    const quotaStatus = String(account.quota?.status || '').trim().toLowerCase()
-    if (quotaStatus !== 'exhausted' && quotaStatus !== 'empty') {
-      return false
-    }
-
-    const now = Math.floor(Date.now() / 1000)
-    const resetCandidates = Array.isArray(account.quota?.buckets)
-      ? account.quota.buckets
-          .map((bucket) => Number(bucket?.resetAt || 0))
-          .filter((value) => Number.isFinite(value) && value > now)
-      : []
-    return resetCandidates.length > 0
-  }
-
-  const shouldSkipAutoRefreshAccount = (account: Account): boolean => {
-    if (!account.enabled) {
-      return true
-    }
-    if (account.banned) {
-      return true
-    }
-
-    const healthState = String(account.healthState || '').trim().toLowerCase()
-    if (healthState === 'banned' || healthState === 'disabled_durable') {
-      return true
-    }
-
-    return isAutoRefreshQuotaCooldown(account)
-  }
-
-  const pickLastUsedAutoRefreshAccount = (items: Account[]): Account | null => {
-    const eligible = items.filter((account) => !shouldSkipAutoRefreshAccount(account))
-    if (eligible.length === 0) {
-      return null
-    }
-
-    return [...eligible].sort((left, right) => {
-      const leftLastUsed = Number(left.lastUsed || 0)
-      const rightLastUsed = Number(right.lastUsed || 0)
-      if (leftLastUsed !== rightLastUsed) {
-        return rightLastUsed - leftLastUsed
-      }
-      return Number(right.updatedAt || 0) - Number(left.updatedAt || 0)
-    })[0]
-  }
-
-  const runAutoRefreshTick = async (): Promise<void> => {
-    const targetAccount = pickLastUsedAutoRefreshAccount(accounts)
-    if (!targetAccount) {
-      const message = 'Auto refresh skipped: no eligible last-used account.'
-      toastStore.push('info', 'Auto Refresh Skipped', message)
-      appendLocalLog('info', 'auto_refresh', message)
-      return
-    }
-
-    const accountLabel = targetAccount.email || targetAccount.accountId || targetAccount.id
-    const startMessage = `Auto refresh checking last-used account ${accountLabel}.`
-    toastStore.push('info', 'Auto Refresh Running', startMessage)
-    appendLocalLog('info', 'auto_refresh', startMessage)
-
-    try {
-      await appService.refreshQuota(targetAccount.id)
-      await Promise.all([refreshAccounts(), refreshState(), refreshProxyStatus()])
-
-      if (activeTab === 'system-logs' || activeTab === 'usage') {
-        await refreshLogs(state?.logMaxEntries || 1000)
-      }
-
-      const successMessage = `Auto refresh completed for ${accountLabel}.`
-      toastStore.push('success', 'Auto Refresh Complete', successMessage)
-      appendLocalLog('info', 'auto_refresh', successMessage)
-    } catch (error) {
-      const message = `Auto refresh failed for ${accountLabel}: ${getErrorMessage(error, 'Unexpected refresh failure.')}`
-      toastStore.push('error', 'Auto Refresh Failed', message)
-      appendLocalLog('error', 'auto_refresh', message)
-      throw error
-    }
-  }
-
-  const handleSetSessionAutoRefreshMinutes = (minutes: number): void => {
-    sessionAutoRefreshMinutes = minutes
-  }
 
   const bindLogsSubscription = (limit: number): void => {
     unsubscribeLogs?.()
@@ -1102,62 +954,13 @@
     )
   }
 
-  const clearAutoRefreshTimer = (): void => {
-    if (autoRefreshTimer) {
-      clearInterval(autoRefreshTimer)
-      autoRefreshTimer = null
-    }
-  }
-
-  const syncAutoRefreshTimer = (intervalMs: number): void => {
-    if (intervalMs <= 0) {
-      autoRefreshIntervalMs = intervalMs
-      clearAutoRefreshTimer()
-      return
-    }
-
-    if (intervalMs === autoRefreshIntervalMs) {
-      return
-    }
-
-    autoRefreshIntervalMs = intervalMs
-    clearAutoRefreshTimer()
-
-    autoRefreshTimer = setInterval(() => {
-      if (autoRefreshInFlight) {
-        return
-      }
-
-      autoRefreshInFlight = true
-      void (async () => {
-        try {
-          await runAutoRefreshTick()
-        } catch {
-          // Ignore auto-refresh tick errors and continue next cycle.
-        } finally {
-          autoRefreshInFlight = false
-        }
-      })()
-    }, intervalMs)
-  }
-
-  $: {
-    if (!sessionAutoRefreshInitialized && Number(state?.autoRefreshMinutes || 0) > 0) {
-      sessionAutoRefreshMinutes = Math.max(1, Number(state?.autoRefreshMinutes || 5))
-      sessionAutoRefreshInitialized = true
-    }
-
-    const minutes = Math.max(1, Number(sessionAutoRefreshMinutes || 5))
-    syncAutoRefreshTimer(minutes * 60 * 1000)
-  }
-
   onMount(() => {
     unsubscribeSecondInstance = EventsOn('app:second-instance', handleSecondInstanceNotice)
 
     void (async () => {
       try {
         await refreshCore()
-        const logLimit = state?.logMaxEntries || 1000
+        const logLimit = 1000
         await refreshLogs(logLimit)
         bindLogsSubscription(logLimit)
         await checkForUpdates()
@@ -1172,115 +975,88 @@
     kiroAuthController.stop()
     unsubscribeLogs?.()
     unsubscribeSecondInstance?.()
-    clearAutoRefreshTimer()
   })
 </script>
 
 <main class="h-screen overflow-hidden bg-app text-text-primary">
-  <div class="flex h-full flex-col">
-    <AppHeader activeTab={activeTab} on:tabChange={onTabChange} on:toggleTheme={toggleTheme} theme={$theme} />
-
-    <section class="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-      <div class="space-y-4 pb-1">
-        {#if activeTab === 'dashboard'}
-          <DashboardTab {state} {accounts} {proxyStatus} loading={loadingDashboard} />
-        {:else if activeTab === 'accounts'}
-          <AccountsTab
-            {accounts}
-            {busyAccountIds}
-            {authSession}
-            {kiroAuthSession}
-            {authWorking}
-            {refreshingAllQuotas}
-            showExhaustedDefault={state?.showExhaustedDefault ?? true}
-            showDisabledDefault={state?.showDisabledDefault ?? true}
-            onStartConnect={handleStartConnect}
-            onCancelConnect={handleCancelConnect}
-            onStartKiroConnect={handleStartKiroConnect}
-            onCancelKiroConnect={handleCancelKiroConnect}
-            onOpenExternalURL={handleOpenExternalURL}
-            onRefreshAllQuotas={handleRefreshAllQuotas}
-            onForceRefreshAllQuotas={handleForceRefreshAllQuotas}
-            onToggleAccount={handleToggleAccount}
-            onBulkToggleAccounts={handleBulkToggleAccounts}
-            onBulkDeleteAccounts={handleBulkDeleteAccounts}
-            onImportAccounts={handleImportAccounts}
-            onSyncCodexAccountToKiloAuth={handleSyncCodexAccountToKiloAuth}
-            onSyncCodexAccountToOpencodeAuth={handleSyncCodexAccountToOpencodeAuth}
-            onSyncCodexAccountToCodexCLI={handleSyncCodexAccountToCodexCLI}
-            onRefreshAccountWithQuota={handleRefreshAccountWithQuota}
-            onDeleteAccount={handleDeleteAccount}
-          />
-        {:else if activeTab === 'api-router'}
-          <ApiRouterTab
-            {proxyStatus}
-            busy={proxyBusy}
-            onStartProxy={() => runProxyAction('Proxy Started', appService.startProxy, 'Proxy service started.')}
-            onStopProxy={() => runProxyAction('Proxy Stopped', appService.stopProxy, 'Proxy service stopped.')}
-            onSetProxyPort={(port) =>
-              runProxyAction('Proxy Port Updated', () => appService.setProxyPort(port), `Proxy port set to ${port}.`)}
-            onSetAllowLAN={handleSetAllowLAN}
-            onSetAutoStartProxy={handleSetAutoStartProxy}
-            onSetProxyAPIKey={handleSetProxyAPIKey}
-            onRegenerateProxyAPIKey={handleRegenerateProxyAPIKey}
-            onSetAuthorizationMode={handleSetAuthorizationMode}
-            onSetSchedulingMode={handleSetSchedulingMode}
-            onSetCircuitBreaker={handleSetCircuitBreaker}
-            onSetCircuitSteps={handleSetCircuitSteps}
-            onRefreshProxyStatus={refreshProxyStatusSafe}
-            onRefreshCloudflaredStatus={refreshCloudflaredStatusSafe}
-            onSetCloudflaredConfig={handleSetCloudflaredConfig}
-            onInstallCloudflared={handleInstallCloudflared}
-            onStartCloudflared={handleStartCloudflared}
-            onStopCloudflared={handleStopCloudflared}
-            onGetCLISyncStatuses={() => appService.getCliSyncStatuses()}
-            onGetLocalModelCatalog={() => appService.getLocalModelCatalog()}
-            onGetCLISyncFileContent={(appId, path) => appService.getCliSyncFileContent(appId, path)}
-            onSaveCLISyncFileContent={(appId, path, content) => appService.saveCliSyncFileContent(appId, path, content)}
-            onSyncCLIConfig={handleSyncCLIConfig}
-          />
-        {:else if activeTab === 'usage'}
-          <UsageTab {state} {accounts} {proxyStatus} {logs} />
-        {:else if activeTab === 'system-logs'}
-          <SystemLogsTab
-            logs={logs}
-            loading={loadingLogs}
-            clearing={clearingLogs}
-            onRefreshLogs={refreshLogs}
-            onClearLogs={handleClearLogs}
-          />
-        {:else if activeTab === 'settings'}
-          <SettingsTab
-            {state}
-            onOpenDataDir={handleOpenDataDir}
-            currentAutoRefreshMinutes={sessionAutoRefreshMinutes}
-            onSetSessionAutoRefreshMinutes={handleSetSessionAutoRefreshMinutes}
-            onExportBackup={handleExportBackup}
-            onRestoreBackup={handleRestoreBackup}
-          />
-        {/if}
-      </div>
-    </section>
-
-    <AppFooter {proxyStatus} />
-  </div>
-
-  <ToastViewport />
-
-  <ConfigurationErrorModal
-    open={showConfigurationErrorModal}
-    warnings={startupWarnings}
-    on:dismiss={dismissConfigurationErrorModal}
-    on:openDataDir={handleOpenDataDir}
+  <AppFrame
+    {activeTab}
+    theme={$theme}
+    {state}
+    {accounts}
+    {proxyStatus}
+    {logs}
+    {loadingDashboard}
+    {loadingLogs}
+    {clearingLogs}
+    {proxyBusy}
+    {authWorking}
+    {refreshingAllQuotas}
+    {busyAccountIds}
+    {authSession}
+    {kiroAuthSession}
+    onToggleTheme={toggleTheme}
+    onTabChange={(tabId) => {
+      activeTab = tabId
+    }}
+    onStartConnect={handleStartConnect}
+    onCancelConnect={handleCancelConnect}
+    onStartKiroConnect={handleStartKiroConnect}
+    onCancelKiroConnect={handleCancelKiroConnect}
+    onOpenExternalURL={handleOpenExternalURL}
+    onRefreshAllQuotas={handleRefreshAllQuotas}
+    onForceRefreshAllQuotas={handleForceRefreshAllQuotas}
+    onToggleAccount={handleToggleAccount}
+    onBulkToggleAccounts={handleBulkToggleAccounts}
+    onBulkDeleteAccounts={handleBulkDeleteAccounts}
+    onImportAccounts={handleImportAccounts}
+    onSyncCodexAccountToKiloAuth={handleSyncCodexAccountToKiloAuth}
+    onSyncCodexAccountToOpencodeAuth={handleSyncCodexAccountToOpencodeAuth}
+    onSyncCodexAccountToCodexCLI={handleSyncCodexAccountToCodexCLI}
+    onRefreshAccountWithQuota={handleRefreshAccountWithQuota}
+    onDeleteAccount={handleDeleteAccount}
+    onStartProxy={() => runProxyAction('Proxy Started', routerApi.startProxy, 'Proxy service started.')}
+    onStopProxy={() => runProxyAction('Proxy Stopped', routerApi.stopProxy, 'Proxy service stopped.')}
+    onSetProxyPort={(port) => runProxyAction('Proxy Port Updated', () => routerApi.setProxyPort(port), `Proxy port set to ${port}.`)}
+    onSetAllowLAN={handleSetAllowLAN}
+    onSetAutoStartProxy={handleSetAutoStartProxy}
+    onSetProxyAPIKey={handleSetProxyAPIKey}
+    onRegenerateProxyAPIKey={handleRegenerateProxyAPIKey}
+    onSetAuthorizationMode={handleSetAuthorizationMode}
+    onSetSchedulingMode={handleSetSchedulingMode}
+    onSetCircuitBreaker={handleSetCircuitBreaker}
+    onSetCircuitSteps={handleSetCircuitSteps}
+    onGetModelAliases={routerApi.getModelAliases}
+    onSetModelAliases={handleSetModelAliases}
+    onRefreshProxyStatus={refreshProxyStatusSafe}
+    onRefreshCloudflaredStatus={refreshCloudflaredStatusSafe}
+    onSetCloudflaredConfig={handleSetCloudflaredConfig}
+    onInstallCloudflared={handleInstallCloudflared}
+    onStartCloudflared={handleStartCloudflared}
+    onStopCloudflared={handleStopCloudflared}
+    onGetCLISyncStatuses={routerApi.getCliSyncStatuses}
+    onGetLocalModelCatalog={routerApi.getLocalModelCatalog}
+    onGetCLISyncFileContent={routerApi.getCliSyncFileContent}
+    onSaveCLISyncFileContent={routerApi.saveCliSyncFileContent}
+    onSyncCLIConfig={handleSyncCLIConfig}
+    onRefreshLogs={refreshLogs}
+    onClearLogs={handleClearLogs}
+    onOpenDataDir={handleOpenDataDir}
+    onExportBackup={handleExportBackup}
+    onRestoreBackup={handleRestoreBackup}
   />
 
-  <UpdatePromptModal
-    open={showUpdatePrompt}
+  <AppOverlayStack
+    {showConfigurationErrorModal}
+    {startupWarnings}
+    onDismissConfigurationErrorModal={dismissConfigurationErrorModal}
+    {showUpdatePrompt}
     currentVersion={updateInfo?.currentVersion || ''}
     latestVersion={updateInfo?.latestVersion || ''}
     releaseName={updateInfo?.releaseName || ''}
     releaseUrl={updateInfo?.releaseUrl || ''}
-    on:dismiss={dismissUpdatePrompt}
-    on:openRelease={openUpdateReleasePage}
+    onDismissUpdatePrompt={dismissUpdatePrompt}
+    onOpenUpdateReleasePage={openUpdateReleasePage}
+    onOpenDataDir={handleOpenDataDir}
   />
 </main>

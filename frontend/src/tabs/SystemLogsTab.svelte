@@ -4,9 +4,9 @@
   import Button from '@/components/common/Button.svelte'
   import SurfaceCard from '@/components/common/SurfaceCard.svelte'
   import StatusBadge from '@/components/common/StatusBadge.svelte'
-  import type { LogEntry } from '@/services/wails-api'
-  import { formatDateTime, formatNumber } from '@/utils/formatters'
-  import { copyTextToClipboard, downloadJSONFile, hasClipboardWrite } from '@/utils/browser'
+  import type { LogEntry } from '@/app/types'
+  import { formatDateTime, formatNumber } from '@/shared/lib/formatters'
+  import { copyTextToClipboard, downloadJSONFile, hasClipboardWrite } from '@/shared/lib/browser'
 
   type LevelFilter = 'all' | 'info' | 'warning' | 'error' | 'debug' | 'other'
   type BadgeTone = 'neutral' | 'success' | 'error' | 'info' | 'warning'

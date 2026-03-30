@@ -2,6 +2,12 @@ package platform
 
 import "testing"
 
+func TestProxyURL_DefaultsToV1Base(t *testing.T) {
+	if got := ProxyURL(8095); got != "http://127.0.0.1:8095/v1" {
+		t.Fatalf("ProxyURL = %q", got)
+	}
+}
+
 func TestJoinProxyBaseURL_PreventsDoubleV1(t *testing.T) {
 	joined := JoinProxyBaseURL("http://127.0.0.1:8095/v1", "/v1/responses")
 	if joined != "http://127.0.0.1:8095/v1/responses" {
@@ -10,6 +16,11 @@ func TestJoinProxyBaseURL_PreventsDoubleV1(t *testing.T) {
 
 	joined = JoinProxyBaseURL("http://127.0.0.1:8095", "/v1/models")
 	if joined != "http://127.0.0.1:8095/v1/models" {
+		t.Fatalf("joined = %q", joined)
+	}
+
+	joined = JoinProxyBaseURL("http://127.0.0.1:8095/v1", "/health")
+	if joined != "http://127.0.0.1:8095/v1/health" {
 		t.Fatalf("joined = %q", joined)
 	}
 }

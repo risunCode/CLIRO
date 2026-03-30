@@ -33,6 +33,8 @@ export function GetLocalModelCatalog():Promise<Array<Record<string, any>>>;
 
 export function GetLogs(arg1:number):Promise<Array<logger.Entry>>;
 
+export function GetModelAliases():Promise<Record<string, string>>;
+
 export function GetProxyStatus():Promise<Record<string, any>>;
 
 export function GetState():Promise<main.State>;
@@ -70,6 +72,8 @@ export function SetCircuitBreaker(arg1:boolean):Promise<void>;
 export function SetCircuitSteps(arg1:Array<number>):Promise<void>;
 
 export function SetCloudflaredConfig(arg1:string,arg2:string,arg3:boolean):Promise<void>;
+
+export function SetModelAliases(arg1:Record<string, string>):Promise<void>;
 
 export function SetProxyAPIKey(arg1:string):Promise<void>;
 

@@ -19,7 +19,7 @@ func ProxyBindHost(allowLAN bool) string {
 }
 
 func ProxyURL(port int) string {
-	return fmt.Sprintf("http://127.0.0.1:%d", port)
+	return fmt.Sprintf("http://127.0.0.1:%d/v1", port)
 }
 
 func ProxyBindAddress(allowLAN bool, port int) string {

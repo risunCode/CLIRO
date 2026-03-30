@@ -37,7 +37,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		s.writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "invalid JSON")
 		return
 	}
-	req.Stream = s.resolveStreamFlag(req.Model, string(ir.EndpointOpenAIChat), req.Stream)
+	req.Stream = s.resolveStreamFlag(req.Stream)
 	s.logRequestEvent("info", requestID, "accepted", fmt.Sprintf("route=%q", "openai_chat"), fmt.Sprintf("model=%q", strings.TrimSpace(req.Model)), fmt.Sprintf("stream=%t", req.Stream))
 
 	s.processOpenAIChat(w, r, requestID, req)
@@ -168,7 +168,7 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		s.writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "invalid JSON")
 		return
 	}
-	req.Stream = s.resolveStreamFlag(req.Model, string(ir.EndpointOpenAICompletions), req.Stream)
+	req.Stream = s.resolveStreamFlag(req.Stream)
 	s.logRequestEvent("info", requestID, "accepted", fmt.Sprintf("route=%q", "openai_completions"), fmt.Sprintf("model=%q", strings.TrimSpace(req.Model)), fmt.Sprintf("stream=%t", req.Stream))
 
 	s.processOpenAICompletions(w, r, requestID, req)
@@ -232,7 +232,7 @@ func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		s.writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "invalid JSON")
 		return
 	}
-	req.Stream = s.resolveStreamFlag(req.Model, string(ir.EndpointOpenAIResponses), req.Stream)
+	req.Stream = s.resolveStreamFlag(req.Stream)
 	model := strings.TrimSpace(req.Model)
 	stream := req.Stream
 	s.logRequestEvent("info", requestID, "accepted", fmt.Sprintf("route=%q", "openai_responses"), fmt.Sprintf("model=%q", model), fmt.Sprintf("stream=%t", stream))

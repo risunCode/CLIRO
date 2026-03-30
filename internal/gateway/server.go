@@ -36,6 +36,7 @@ const (
 	RouteHealth                = "/health"
 	RouteStats                 = "/v1/stats"
 	RouteModels                = "/v1/models"
+	compatV1Prefix             = "/v1"
 )
 
 func nowUnix() int64 {
@@ -107,6 +108,64 @@ func NewServer(store *config.Manager, authManager *auth.Manager, accountPool *ac
 	return s
 }
 
+func (s *Server) newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	s.handleRouteWithCompatV1(mux, "/", s.handleRoot)
+	s.handleRouteWithCompatV1(mux, RouteHealth, s.handleHealth)
+	s.handleRouteWithCompatV1(mux, RouteStats, s.handleStats)
+	s.handleRouteWithCompatV1(mux, RouteModels, s.handleModels)
+	s.handleRouteWithCompatV1(mux, RouteOpenAIResponses, s.handleResponses)
+	s.handleRouteWithCompatV1(mux, RouteOpenAIChatCompletions, s.handleChatCompletions)
+	s.handleRouteWithCompatV1(mux, RouteOpenAICompletions, s.handleCompletions)
+	s.handleRouteWithCompatV1(mux, RouteAnthropicMessages, s.handleAnthropicMessages)
+	s.handleRouteWithCompatV1(mux, RouteAnthropicCountTokens, s.handleAnthropicCountTokens)
+	mux.HandleFunc("/api/event_logging/batch", s.handleEventLogging)
+	return mux
+}
+
+func (s *Server) handleRouteWithCompatV1(mux *http.ServeMux, path string, handler http.HandlerFunc) {
+	for _, alias := range routeAliases(path) {
+		mux.HandleFunc(alias, handler)
+	}
+}
+
+func compatV1Path(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	if trimmed == "/" {
+		return compatV1Prefix
+	}
+	return compatV1Prefix + trimmed
+}
+
+func routeAliases(path string) []string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil
+	}
+	aliases := []string{trimmed}
+	firstCompat := compatV1Path(trimmed)
+	if firstCompat != "" {
+		aliases = append(aliases, firstCompat)
+	}
+	secondCompat := compatV1Path(firstCompat)
+	if secondCompat != "" {
+		aliases = append(aliases, secondCompat)
+	}
+	unique := make([]string, 0, len(aliases))
+	seen := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		if _, ok := seen[alias]; ok {
+			continue
+		}
+		seen[alias] = struct{}{}
+		unique = append(unique, alias)
+	}
+	return unique
+}
+
 func (s *Server) Running() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -127,17 +186,7 @@ func (s *Server) Start(port int, allowLAN bool) error {
 	}
 
 	bindAddr := platform.ProxyBindAddress(allowLAN, port)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleRoot)
-	mux.HandleFunc(RouteHealth, s.handleHealth)
-	mux.HandleFunc(RouteStats, s.handleStats)
-	mux.HandleFunc(RouteModels, s.handleModels)
-	mux.HandleFunc(RouteOpenAIResponses, s.handleResponses)
-	mux.HandleFunc(RouteOpenAIChatCompletions, s.handleChatCompletions)
-	mux.HandleFunc(RouteOpenAICompletions, s.handleCompletions)
-	mux.HandleFunc(RouteAnthropicMessages, s.handleAnthropicMessages)
-	mux.HandleFunc(RouteAnthropicCountTokens, s.handleAnthropicCountTokens)
-	mux.HandleFunc("/api/event_logging/batch", s.handleEventLogging)
+	mux := s.newMux()
 
 	server := &http.Server{Addr: bindAddr, Handler: mux}
 	s.server = server
@@ -192,7 +241,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	r, requestID := s.prepareRequestContext(r)
 	s.applyCommonHeaders(w)
 	w.Header().Set("X-Request-ID", requestID)
-	if r.URL.Path != "/" {
+	if !isRootPathAlias(r.URL.Path) {
 		http.NotFound(w, r)
 		return
 	}
@@ -213,6 +262,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		"running": s.Running(),
 		"routes": []string{
 			"GET /health",
+			"GET /v1/health",
 			"GET /v1/models",
 			"GET /v1/stats",
 			"POST /v1/responses",
@@ -222,6 +272,11 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 			"POST /v1/messages/count_tokens",
 		},
 	})
+}
+
+func isRootPathAlias(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	return trimmed == "/" || trimmed == compatV1Prefix || trimmed == compatV1Path(compatV1Prefix)
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -304,18 +359,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) executeRequest(ctx context.Context, request ir.Request) (ir.Response, int, string, error) {
 	requestID := platform.RequestIDFromContext(ctx)
-	resolution, err := route.ResolveModel(request.Model, route.DefaultThinkingSuffix)
+	aliases := s.store.ModelAliases()
+	resolution, err := route.ResolveModel(request.Model, route.DefaultThinkingSuffix, aliases)
 	if err != nil {
 		s.recordRequestFailure()
 		s.logRequestEvent("warn", requestID, "failed", fmt.Sprintf("route=%q", string(request.Endpoint)), fmt.Sprintf("reason=%q", err.Error()))
 		return ir.Response{}, http.StatusBadRequest, err.Error(), err
 	}
 
-	if resolution.Provider == route.ProviderCodex {
-		request.Model = resolution.ResolvedModel
-	} else {
-		request.Model = resolution.RequestedModel
-	}
+	request.Model = resolution.ResolvedModel
 
 	if err := route.ValidateEndpointProvider(string(request.Endpoint), resolution.Provider); err != nil {
 		s.recordRequestFailure()
@@ -378,12 +430,13 @@ func outcomeToIRResponse(outcome provider.CompletionOutcome, model string) ir.Re
 	resolvedModel := firstNonEmpty(strings.TrimSpace(outcome.Model), strings.TrimSpace(model))
 
 	return ir.Response{
-		ID:         outcome.ID,
-		Model:      resolvedModel,
-		Text:       outcome.Text,
-		Thinking:   outcome.Thinking,
-		ToolCalls:  toolCalls,
-		StopReason: stopReason,
+		ID:                outcome.ID,
+		Model:             resolvedModel,
+		Text:              outcome.Text,
+		Thinking:          outcome.Thinking,
+		ThinkingSignature: outcome.ThinkingSignature,
+		ToolCalls:         toolCalls,
+		StopReason:        stopReason,
 		Usage: ir.Usage{
 			PromptTokens:     outcome.Usage.PromptTokens,
 			CompletionTokens: outcome.Usage.CompletionTokens,
@@ -490,12 +543,9 @@ func (s *Server) writeGenericError(w http.ResponseWriter, status int, errType st
 	})
 }
 
-func (s *Server) resolveStreamFlag(model string, endpoint string, requested bool) bool {
+func (s *Server) resolveStreamFlag(requested bool) bool {
 	_ = s
-	_ = model
-	_ = endpoint
-	_ = requested
-	return true
+	return requested
 }
 
 func (s *Server) writeOpenAIError(w http.ResponseWriter, status int, errType, message string) {

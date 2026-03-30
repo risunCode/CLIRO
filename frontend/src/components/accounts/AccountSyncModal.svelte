@@ -3,8 +3,8 @@
   import { TriangleAlert, ArrowRightLeft, CircleCheckBig, ChevronRight, LoaderCircle } from 'lucide-svelte'
   import BaseModal from '@/components/common/BaseModal.svelte'
   import Button from '@/components/common/Button.svelte'
-  import { ACCOUNT_SYNC_TARGETS } from '@/services/accounts'
-  import type { Account, AccountSyncResult, SyncTargetID } from '@/services/wails-api'
+  import { ACCOUNT_SYNC_TARGETS } from '@/features/accounts/lib/sync'
+  import type { Account, AccountSyncResult, SyncTargetID } from '@/features/accounts/types'
 
   export let open = false
   export let account: Account | null = null

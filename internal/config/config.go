@@ -16,14 +16,6 @@ type StartupWarning struct {
 	Message    string `json:"message"`
 }
 
-type StreamMode string
-
-const (
-	StreamModeDefault  StreamMode = "default"
-	StreamModeDisabled StreamMode = "false"
-	StreamModeEnabled  StreamMode = "true"
-)
-
 type SchedulingMode string
 
 const (
@@ -126,12 +118,12 @@ type AppConfig struct {
 	AutoStartProxy    bool                `json:"autoStartProxy"`
 	ProxyAPIKey       string              `json:"proxyApiKey,omitempty"`
 	AuthorizationMode bool                `json:"authorizationMode,omitempty"`
-	StreamMode        StreamMode          `json:"streamMode,omitempty"`
 	SchedulingMode    SchedulingMode      `json:"schedulingMode,omitempty"`
 	CircuitBreaker    bool                `json:"circuitBreaker,omitempty"`
 	CircuitSteps      []int               `json:"circuitSteps,omitempty"`
 	Cloudflared       CloudflaredSettings `json:"cloudflared,omitempty"`
-	Accounts          []Account           `json:"accounts"`
+	ModelAliases  map[string]string   `json:"modelAliases,omitempty"`
+	Accounts[]Account           `json:"accounts"`
 	Stats             ProxyStats          `json:"stats"`
 	StartupWarnings   []StartupWarning    `json:"startupWarnings,omitempty"`
 }
@@ -178,7 +170,6 @@ func (m *Manager) load() error {
 	if settings.ProxyPort == 0 {
 		settings.ProxyPort = defaultProxyPort
 	}
-	settings.StreamMode = string(normalizeStreamMode(StreamMode(settings.StreamMode)))
 	settings.SchedulingMode = string(normalizeSchedulingMode(SchedulingMode(settings.SchedulingMode)))
 	settings.CircuitSteps = normalizeCircuitSteps(settings.CircuitSteps)
 	settings.Cloudflared = normalizeCloudflaredSettings(settings.Cloudflared)
@@ -228,11 +219,11 @@ func (m *Manager) Snapshot() AppConfig {
 		AutoStartProxy:    m.settings.AutoStartProxy,
 		ProxyAPIKey:       m.settings.ProxyAPIKey,
 		AuthorizationMode: m.settings.AuthorizationMode,
-		StreamMode:        normalizeStreamMode(StreamMode(m.settings.StreamMode)),
 		SchedulingMode:    normalizeSchedulingMode(SchedulingMode(m.settings.SchedulingMode)),
 		CircuitBreaker:    m.settings.CircuitBreaker,
 		CircuitSteps:      cloneIntSlice(m.settings.CircuitSteps),
-		Cloudflared:       normalizeCloudflaredSettings(m.settings.Cloudflared),
+		Cloudflared:  normalizeCloudflaredSettings(m.settings.Cloudflared),
+		ModelAliases:      cloneModelAliases(m.settings.ModelAliases),
 		Accounts:          cloneAccounts(m.accounts),
 		Stats:             m.stats,
 		StartupWarnings:   cloneStartupWarnings(m.startupWarnings),
@@ -324,19 +315,6 @@ func (m *Manager) SetAuthorizationMode(enabled bool) error {
 	return m.saveSettings()
 }
 
-func (m *Manager) StreamMode() StreamMode {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return normalizeStreamMode(StreamMode(m.settings.StreamMode))
-}
-
-func (m *Manager) SetStreamMode(mode StreamMode) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.settings.StreamMode = string(normalizeStreamMode(mode))
-	return m.saveSettings()
-}
-
 func (m *Manager) SchedulingMode() SchedulingMode {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -402,9 +380,17 @@ func (m *Manager) SetCloudflaredEnabled(enabled bool) error {
 	return m.saveSettings()
 }
 
-func normalizeStreamMode(mode StreamMode) StreamMode {
-	_ = mode
-	return StreamModeEnabled
+func (m *Manager) ModelAliases() map[string]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return cloneModelAliases(m.settings.ModelAliases)
+}
+
+func (m *Manager) SetModelAliases(aliases map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.settings.ModelAliases = cloneModelAliases(aliases)
+	return m.saveSettings()
 }
 
 func normalizeSchedulingMode(mode SchedulingMode) SchedulingMode {
@@ -633,6 +619,17 @@ func cloneIntSlice(src []int) []int {
 		return defaultCircuitSteps()
 	}
 	return append([]int(nil), src...)
+}
+
+func cloneModelAliases(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
 }
 
 func BlockedAccountReason(message string) (string, bool) {

@@ -3,9 +3,12 @@
   import { Ban, Gauge, Server, Users } from 'lucide-svelte'
   import SurfaceCard from '@/components/common/SurfaceCard.svelte'
   import StatusBadge from '@/components/common/StatusBadge.svelte'
-  import { appService, type Account, type AppState, type ProxyStatus } from '@/services/wails-api'
-  import { deriveQuotaDisplayStatus } from '@/utils/account-quota'
-  import { formatNumber, formatUnixSeconds } from '@/utils/formatters'
+  import { systemApi } from '@/app/api/system-api'
+  import type { AppState } from '@/app/types'
+  import type { Account } from '@/features/accounts/types'
+  import type { ProxyStatus } from '@/features/router/types'
+  import { deriveQuotaDisplayStatus } from '@/features/accounts/lib/account-quota'
+  import { formatNumber, formatUnixSeconds } from '@/shared/lib/formatters'
 
   export let state: AppState | null = null
   export let accounts: Account[] = []
@@ -43,7 +46,7 @@
 
   const loadHostName = async (): Promise<void> => {
     try {
-      const value = (await appService.getHostName()).trim()
+      const value = (await systemApi.getHostName()).trim()
       if (value.length > 0) {
         hostName = value
       }

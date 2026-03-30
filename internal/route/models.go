@@ -15,90 +15,48 @@ const (
 )
 
 type Resolution struct {
-	Provider        Provider
-	RequestedModel  string
-	ResolvedModel   string
-	ThinkingEnabled bool
+	Provider       Provider
+	RequestedModel string
+	ResolvedModel  string
 }
 
 type ModelDefinition struct {
 	ID               string
 	OwnedBy          string
 	SupportsThinking bool
+	Hidden           bool
 }
 
-var codexModelPrefixes = []string{
-	"gpt-",
-	"o1",
-	"o3",
-	"o4",
-}
-
-var kiroModelPrefixes = []string{
-	"claude-",
-	"minimax",
-	"deepseek",
-	"qwen",
-}
-
-var modelCatalog = []ModelDefinition{
-	{ID: "gpt-5.1-codex-max", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "gpt-5.1-codex-mini", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "gpt-5.2", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "gpt-5.4", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "gpt-5.2-codex", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "gpt-5.3-codex", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "gpt-5.1-codex", OwnedBy: "codex", SupportsThinking: true},
-	{ID: "claude-sonnet-4.5", OwnedBy: "kiro", SupportsThinking: true},
-	{ID: "claude-sonnet-4", OwnedBy: "kiro", SupportsThinking: true},
-	{ID: "claude-haiku-4.5", OwnedBy: "kiro", SupportsThinking: true},
-	{ID: "claude-opus-4.5", OwnedBy: "kiro", SupportsThinking: true},
-	{ID: "qwen3-coder-next", OwnedBy: "kiro", SupportsThinking: true},
-	{ID: "minimax-m2.5", OwnedBy: "kiro", SupportsThinking: true},
-}
-
-func ResolveModel(model string, thinkingSuffix string) (Resolution, error) {
+func ResolveModel(model string, thinkingSuffix string, aliases map[string]string) (Resolution, error) {
 	requested := strings.TrimSpace(model)
 	if requested == "" {
 		return Resolution{}, fmt.Errorf("model is required")
 	}
 
-	resolved, thinkingEnabled := splitThinkingSuffix(requested, thinkingSuffix)
-	provider, ok := providerForModel(resolved)
-	if !ok {
-		return Resolution{}, fmt.Errorf("unsupported model: %s", requested)
-	}
-	if provider != ProviderKiro {
-		thinkingEnabled = false
+	resolvedBase, _ := splitThinkingSuffix(requested, thinkingSuffix)
+
+	// Check alias first
+	if aliasTarget, ok := aliases[resolvedBase]; ok && strings.TrimSpace(aliasTarget) != "" {
+		resolvedBase = strings.TrimSpace(aliasTarget)
 	}
 
-	return Resolution{
-		Provider:        provider,
-		RequestedModel:  requested,
-		ResolvedModel:   resolved,
-		ThinkingEnabled: thinkingEnabled,
-	}, nil
-}
-
-func providerForModel(model string) (Provider, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(model))
-	if normalized == "" {
-		return "", false
+	if resolvedModel, ok := resolveCodexModel(resolvedBase); ok {
+		return Resolution{
+			Provider:     ProviderCodex,
+			RequestedModel: requested,
+			ResolvedModel:  resolvedModel,
+		}, nil
 	}
 
-	for _, prefix := range codexModelPrefixes {
-		if strings.HasPrefix(normalized, prefix) {
-			return ProviderCodex, true
-		}
+	if resolvedModel, ok := resolveKiroModel(resolvedBase); ok {
+		return Resolution{
+			Provider:       ProviderKiro,
+			RequestedModel: requested,
+			ResolvedModel:  resolvedModel,
+		}, nil
 	}
 
-	for _, prefix := range kiroModelPrefixes {
-		if strings.HasPrefix(normalized, prefix) {
-			return ProviderKiro, true
-		}
-	}
-
-	return "", false
+	return Resolution{}, fmt.Errorf("unsupported model: %s", requested)
 }
 
 func splitThinkingSuffix(model string, suffix string) (string, bool) {
@@ -123,27 +81,24 @@ func splitThinkingSuffix(model string, suffix string) (string, bool) {
 
 	return trimmed, false
 }
-
-func DefaultStreamingEnabled(model string, endpoint string) bool {
-	resolution, err := ResolveModel(model, DefaultThinkingSuffix)
-	if err != nil {
-		return false
-	}
-	return resolution.ThinkingEnabled && endpoint != "anthropic_count_tokens"
+func CatalogModels(_ string) []ModelDefinition {
+	models := make([]ModelDefinition, 0, len(codexModelCatalog)+len(kiroModelCatalog))
+	models = append(models, catalogModelsForProvider(codexModelCatalog)...)
+	models = append(models, catalogModelsForProvider(kiroModelCatalog)...)
+	return models
 }
 
-func CatalogModels(thinkingSuffix string) []ModelDefinition {
-	resolvedSuffix := strings.TrimSpace(thinkingSuffix)
-	if resolvedSuffix == "" {
-		resolvedSuffix = DefaultThinkingSuffix
-	}
-
-	models := make([]ModelDefinition, 0, len(modelCatalog)*2)
-	for _, model := range modelCatalog {
-		models = append(models, model)
-		if model.SupportsThinking && model.OwnedBy == string(ProviderKiro) {
-			models = append(models, ModelDefinition{ID: model.ID + resolvedSuffix, OwnedBy: model.OwnedBy, SupportsThinking: false})
+func catalogModelsForProvider(catalog []ModelDefinition) []ModelDefinition {
+	out := make([]ModelDefinition, 0, len(catalog))
+	for _, model := range catalog {
+		if model.Hidden {
+			continue
 		}
+		out = append(out, ModelDefinition{
+			ID:               model.ID,
+			OwnedBy:          model.OwnedBy,
+			SupportsThinking: model.SupportsThinking,
+		})
 	}
-	return models
+	return out
 }

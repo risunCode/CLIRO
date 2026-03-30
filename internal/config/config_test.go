@@ -7,9 +7,6 @@ func TestNewManager_DefaultsProxyRoutingSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
-	if manager.StreamMode() != StreamModeEnabled {
-		t.Fatalf("stream mode = %q", manager.StreamMode())
-	}
 	if manager.SchedulingMode() != SchedulingModeBalance {
 		t.Fatalf("scheduling mode = %q", manager.SchedulingMode())
 	}

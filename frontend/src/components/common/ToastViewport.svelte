@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fly, scale } from 'svelte/transition'
-  import { toastStore, type ToastType } from '@/stores/toast'
+  import { toastStore, type ToastType } from '@/shared/stores/toast'
   import Button from '@/components/common/Button.svelte'
   import SurfaceCard from '@/components/common/SurfaceCard.svelte'
 

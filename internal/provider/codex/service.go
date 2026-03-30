@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"cliro-go/internal/account"
-	"cliro-go/internal/auth"
+	adapterencode "cliro-go/internal/adapter/encode"
+	"cliro-go/internal/adapter/rules"
 	"cliro-go/internal/config"
 	"cliro-go/internal/logger"
 	"cliro-go/internal/platform"
@@ -22,24 +23,31 @@ import (
 )
 
 const (
-	codexBaseURL   = "https://chatgpt.com/backend-api/codex"
-	codexVersion   = "0.101.0"
-	codexUserAgent = "codex_cli_rs/0.101.0 (Windows NT 10.0; Win64; x64)"
-	quotaCooldown  = time.Hour
+	codexBaseURL  = "https://chatgpt.com/backend-api/codex"
+	codexVersion  = "0.117.0"
+	quotaCooldown = time.Hour
 )
+
+var codexUserAgent = platform.BuildOpencodeUserAgent()
 
 type Service struct {
 	store      *config.Manager
-	auth       *auth.Manager
+	auth       accountAuth
 	pool       *account.Pool
 	log        *logger.Logger
 	httpClient *http.Client
 }
 
+type accountAuth interface {
+	EnsureFreshAccount(accountID string) (config.Account, error)
+	RefreshAccount(accountID string) (config.Account, error)
+}
+
 type responseEvent struct {
-	Type     string `json:"type"`
-	Delta    string `json:"delta"`
-	Text     string `json:"text"`
+	Type     string       `json:"type"`
+	Delta    string       `json:"delta"`
+	Text     string       `json:"text"`
+	Item     responseItem `json:"item"`
 	Response struct {
 		ID    string `json:"id"`
 		Usage struct {
@@ -47,6 +55,7 @@ type responseEvent struct {
 			OutputTokens int `json:"output_tokens"`
 			TotalTokens  int `json:"total_tokens"`
 		} `json:"usage"`
+		Output []responseItem `json:"output"`
 	} `json:"response"`
 	Error struct {
 		Message         string `json:"message"`
@@ -56,7 +65,25 @@ type responseEvent struct {
 	} `json:"error"`
 }
 
-func NewService(store *config.Manager, authManager *auth.Manager, accountPool *account.Pool, log *logger.Logger, httpClient *http.Client) *Service {
+type responseItem struct {
+	ID               string            `json:"id"`
+	Type             string            `json:"type"`
+	Role             string            `json:"role"`
+	Status           string            `json:"status"`
+	CallID           string            `json:"call_id"`
+	Name             string            `json:"name"`
+	Arguments        string            `json:"arguments"`
+	EncryptedContent string            `json:"encrypted_content"`
+	Content          []responseContent `json:"content"`
+	Summary          []responseContent `json:"summary"`
+}
+
+type responseContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func NewService(store *config.Manager, authManager accountAuth, accountPool *account.Pool, log *logger.Logger, httpClient *http.Client) *Service {
 	client := httpClient
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Minute}
@@ -196,11 +223,10 @@ func (s *Service) buildRequest(ctx context.Context, account config.Account, req 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
 	httpReq.Header.Set("Authorization", "Bearer "+account.AccessToken)
-	httpReq.Header.Set("Version", codexVersion)
 	httpReq.Header.Set("Session_id", uuid.NewString())
 	httpReq.Header.Set("User-Agent", codexUserAgent)
 	httpReq.Header.Set("Connection", "Keep-Alive")
-	httpReq.Header.Set("Originator", "codex_cli_rs")
+	httpReq.Header.Set("Originator", "opencode")
 	if strings.TrimSpace(account.AccountID) != "" {
 		httpReq.Header.Set("Chatgpt-Account-Id", account.AccountID)
 	}
@@ -215,7 +241,10 @@ func (s *Service) collectCompletion(body io.Reader, model string) (provider.Comp
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	var builder strings.Builder
+	var textBuilder strings.Builder
+	var thinkingBuilder strings.Builder
+	toolUses := make([]provider.ToolUse, 0)
+	seenToolUseIDs := make(map[string]struct{})
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data:") {
@@ -232,15 +261,26 @@ func (s *Service) collectCompletion(body io.Reader, model string) (provider.Comp
 		switch event.Type {
 		case "response.output_text.delta":
 			if event.Delta != "" {
-				builder.WriteString(event.Delta)
+				textBuilder.WriteString(event.Delta)
 			} else if event.Text != "" {
-				builder.WriteString(event.Text)
+				textBuilder.WriteString(event.Text)
 			}
+		case "response.reasoning.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.output_reasoning.delta":
+			if event.Delta != "" {
+				thinkingBuilder.WriteString(event.Delta)
+			} else if event.Text != "" {
+				thinkingBuilder.WriteString(event.Text)
+			}
+		case "response.output_item.done":
+			collectResponseItem(&textBuilder, &thinkingBuilder, &toolUses, seenToolUseIDs, event.Item)
 		case "response.completed":
 			out.ID = firstNonEmpty(event.Response.ID, out.ID)
 			out.Usage.PromptTokens = event.Response.Usage.InputTokens
 			out.Usage.CompletionTokens = event.Response.Usage.OutputTokens
 			out.Usage.TotalTokens = event.Response.Usage.TotalTokens
+			for _, item := range event.Response.Output {
+				collectResponseItem(&textBuilder, &thinkingBuilder, &toolUses, seenToolUseIDs, item)
+			}
 		case "error":
 			return out, fmt.Errorf(firstNonEmpty(event.Error.Message, "upstream error"))
 		}
@@ -249,11 +289,67 @@ func (s *Service) collectCompletion(body io.Reader, model string) (provider.Comp
 		return out, err
 	}
 
-	out.Text = builder.String()
+	out.Text = textBuilder.String()
+	out.Thinking = thinkingBuilder.String()
+	out.ThinkingSignature = adapterencode.StableThinkingSignature(out.Thinking)
+	out.ToolUses = toolUses
 	if out.Usage.TotalTokens == 0 {
 		out.Usage.TotalTokens = out.Usage.PromptTokens + out.Usage.CompletionTokens
 	}
 	return out, nil
+}
+
+func collectResponseItem(textBuilder *strings.Builder, thinkingBuilder *strings.Builder, toolUses *[]provider.ToolUse, seenToolUseIDs map[string]struct{}, item responseItem) {
+	switch strings.ToLower(strings.TrimSpace(item.Type)) {
+	case "function_call":
+		toolUseID := firstNonEmpty(strings.TrimSpace(item.CallID), strings.TrimSpace(item.ID))
+		toolName := strings.TrimSpace(item.Name)
+		if toolUseID == "" || toolName == "" {
+			return
+		}
+		if _, exists := seenToolUseIDs[toolUseID]; exists {
+			return
+		}
+		seenToolUseIDs[toolUseID] = struct{}{}
+		*toolUses = append(*toolUses, provider.ToolUse{
+			ID:    toolUseID,
+			Name:  toolName,
+			Input: remappedCodexToolArgs(toolName, item.Arguments),
+		})
+	case "message":
+		if textBuilder.Len() == 0 {
+			if text := responseItemText(item.Content); text != "" {
+				textBuilder.WriteString(text)
+			}
+		}
+	case "reasoning":
+		if thinkingBuilder.Len() == 0 {
+			if text := firstNonEmpty(responseItemText(item.Summary), responseItemText(item.Content)); text != "" {
+				thinkingBuilder.WriteString(text)
+			}
+		}
+	}
+}
+
+func responseItemText(content []responseContent) string {
+	if len(content) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(content))
+	for _, part := range content {
+		if strings.TrimSpace(part.Text) != "" {
+			parts = append(parts, part.Text)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, ""))
+}
+
+func remappedCodexToolArgs(name string, arguments string) map[string]any {
+	input := map[string]any{}
+	if strings.TrimSpace(arguments) != "" {
+		_ = json.Unmarshal([]byte(arguments), &input)
+	}
+	return rules.RemapToolCallArgs(name, input)
 }
 
 func (s *Service) handleUpstreamFailure(account config.Account, statusCode int, body []byte) provider.FailureDecision {

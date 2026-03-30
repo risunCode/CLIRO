@@ -33,10 +33,12 @@ Current release: **v0.2.0**
 ## Supported Models
 
 - Codex models are listed directly in `GET /v1/models`.
-- Kiro models are listed directly and also publish `-thinking` aliases.
-- `-thinking` is a Kiro-only convention. Example:
+- Kiro models are listed directly in `GET /v1/models`.
+- Current Kiro catalog includes examples such as:
+  - `claude-sonnet-4`
   - `claude-sonnet-4.5`
-  - `claude-sonnet-4.5-thinking`
+  - `minimax-m2.5`
+  - `qwen3-coder-next`
 
 ## Local Data
 
@@ -95,7 +97,7 @@ Windows output:
 
 Default base URL:
 
-`http://localhost:8095`
+`http://localhost:8095/v1`
 
 Example:
 
@@ -110,12 +112,20 @@ curl -X POST http://localhost:8095/v1/chat/completions \
 - Authorization mode requires the configured API key for all proxy routes.
 - Cloudflared public access is managed from the API Router tab and depends on the local proxy being online.
 - Smart `Refresh All Quotas` skips accounts still waiting for quota reset; `Force Refresh All Quotas` checks every configured account.
+- Claude Code / Anthropic compatibility notes, including `/v1/v1/...` route aliases and Kiro tool-turn normalization, are documented in `docs/claude-code-compat.md`.
+- Kiro reasoning-stream parity, compaction, truncation recovery, and prompt-shaping follow-up work are outlined in `docs/kiro-thinking-compaction-plan.md`.
 
 ## Attribution
 
 - Codex and Kiro icons/marks remain the property of their respective owners.
 - The CLIRO route app icon uses Icons8 artwork: `https://icons8.com/icons/set/route`
 
+## Inspired By
+- [9router](https://github.com/decolua/9router) For usage tab design
+- [Kiro-Go](https://github.com/Quorinex/Kiro-Go) Fake reasoning mode
+- [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) For Account and API route UI design
+
 ## Release Notes
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the full `v0.2.0` change history.
+

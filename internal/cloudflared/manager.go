@@ -67,7 +67,7 @@ func (m *Manager) GetStatus() Status {
 }
 
 func (m *Manager) RefreshStatus() Status {
-	installed, version := m.checkInstalled()
+	installed, version, _ := m.checkInstalled()
 
 	m.mu.Lock()
 	m.status.Installed = installed
@@ -144,7 +144,7 @@ func (m *Manager) Start(settings config.CloudflaredSettings, port int) (Status, 
 	}
 	m.mu.RUnlock()
 
-	installed, version := m.checkInstalled()
+	installed, version, binPath := m.checkInstalled()
 	if !installed {
 		status := m.RefreshStatus()
 		return status, fmt.Errorf("cloudflared is not installed")
@@ -165,8 +165,8 @@ func (m *Manager) Start(settings config.CloudflaredSettings, port int) (Status, 
 		args = append(args, "--protocol", "http2")
 	}
 
-	cmd := exec.Command(m.binPath, args...)
-	if dir := filepath.Dir(m.binPath); dir != "" {
+	cmd := exec.Command(binPath, args...)
+	if dir := filepath.Dir(binPath); dir != "" {
 		cmd.Dir = dir
 	}
 	configureCommand(cmd)
@@ -305,26 +305,103 @@ func (m *Manager) waitForExit(cmd *exec.Cmd, done chan struct{}) {
 	m.status.Error = "tunnel process exited"
 }
 
-func (m *Manager) checkInstalled() (bool, string) {
-	info, err := os.Stat(m.binPath)
-	if err != nil || info.IsDir() {
-		return false, ""
+func (m *Manager) checkInstalled() (bool, string, string) {
+	binPath := m.discoverBinaryPath()
+	if strings.TrimSpace(binPath) == "" {
+		return false, "", ""
 	}
 
-	cmd := exec.Command(m.binPath, "--version")
+	cmd := exec.Command(binPath, "--version")
 	configureCommand(cmd)
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return false, ""
+		m.mu.Lock()
+		m.binPath = binPath
+		m.mu.Unlock()
+		return true, "", binPath
 	}
 
-	for _, line := range strings.Split(string(output), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			return true, trimmed
+	version := firstNonEmptyLine(string(output))
+
+	m.mu.Lock()
+	m.binPath = binPath
+	m.mu.Unlock()
+
+	return true, version, binPath
+}
+
+func (m *Manager) discoverBinaryPath() string {
+	for _, candidate := range m.binaryPathCandidates() {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		return candidate
+	}
+
+	return ""
+}
+
+func (m *Manager) binaryPathCandidates() []string {
+	binDir := filepath.Dir(m.binPath)
+	ext := ""
+	if runtime.GOOS == "windows" {
+		ext = ".exe"
+	}
+
+	paths := []string{
+		m.binPath,
+		filepath.Join(binDir, "cloudflared"+ext),
+		filepath.Join(binDir, fmt.Sprintf("cloudflared-%s-%s%s", runtime.GOOS, runtime.GOARCH, ext)),
+	}
+
+	if entries, err := os.ReadDir(binDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := strings.ToLower(strings.TrimSpace(entry.Name()))
+			if !strings.HasPrefix(name, "cloudflared") || isCloudflaredArchiveName(name) {
+				continue
+			}
+			if runtime.GOOS == "windows" && filepath.Ext(name) != ".exe" {
+				continue
+			}
+			paths = append(paths, filepath.Join(binDir, entry.Name()))
 		}
 	}
-	return true, ""
+
+	seen := make(map[string]struct{}, len(paths))
+	unique := make([]string, 0, len(paths))
+	for _, path := range paths {
+		normalized := strings.TrimSpace(path)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		unique = append(unique, normalized)
+	}
+
+	return unique
+}
+
+func isCloudflaredArchiveName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return strings.HasSuffix(lower, ".zip") || strings.HasSuffix(lower, ".tgz") || strings.HasSuffix(lower, ".tar") || strings.HasSuffix(lower, ".gz")
+}
+
+func firstNonEmptyLine(raw string) string {
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return ""
 }
 
 func downloadURL() (string, bool, error) {

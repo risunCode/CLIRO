@@ -3,7 +3,7 @@
   import { TriangleAlert, Trash2 } from 'lucide-svelte'
   import BaseModal from '@/components/common/BaseModal.svelte'
   import Button from '@/components/common/Button.svelte'
-  import { formatNumber } from '@/utils/formatters'
+  import { formatNumber } from '@/shared/lib/formatters'
 
   export let open = false
   export let count = 0

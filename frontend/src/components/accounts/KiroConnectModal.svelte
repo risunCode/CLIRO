@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte'
   import BaseModal from '@/components/common/BaseModal.svelte'
   import Button from '@/components/common/Button.svelte'
+  import ModalWindowHeader from '@/components/common/ModalWindowHeader.svelte'
 
   export let open = false
   export let authUrl = ''
@@ -47,13 +48,10 @@
   on:close={closeModal}
 >
   <svelte:fragment slot="header">
-    <div class="mb-2 flex items-center gap-2">
-      <span class="h-3 w-3 rounded-full bg-[#ef4444]" aria-hidden="true" />
-      <span class="h-3 w-3 rounded-full bg-[#f59e0b]" aria-hidden="true" />
-      <span class="h-3 w-3 rounded-full bg-[#22c55e]" aria-hidden="true" />
-    </div>
-    <h2 class="text-base font-semibold text-text-primary">Connect KiroAI Account</h2>
-    <p class="mt-1 text-sm text-text-secondary">Connect with AWS Builder ID device auth or a supported Kiro social login provider.</p>
+    <ModalWindowHeader
+      title="Connect KiroAI Account"
+      description="Connect with AWS Builder ID device auth or a supported Kiro social login provider."
+    />
   </svelte:fragment>
 
   {#if !hasActiveSession}

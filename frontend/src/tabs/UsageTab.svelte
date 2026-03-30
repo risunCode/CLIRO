@@ -4,8 +4,10 @@
   import kiroIcon from '@/assets/icons/kiro-icon.png'
   import SurfaceCard from '@/components/common/SurfaceCard.svelte'
   import StatusBadge from '@/components/common/StatusBadge.svelte'
-  import type { Account, AppState, LogEntry, ProxyStatus } from '@/services/wails-api'
-  import { formatNumber } from '@/utils/formatters'
+  import type { AppState, LogEntry } from '@/app/types'
+  import type { Account } from '@/features/accounts/types'
+  import type { ProxyStatus } from '@/features/router/types'
+  import { formatNumber } from '@/shared/lib/formatters'
 
   interface ParsedRequestLog {
     timestamp: number

@@ -3,12 +3,13 @@
   import { Eye, EyeOff } from 'lucide-svelte'
   import BaseModal from '@/components/common/BaseModal.svelte'
   import Button from '@/components/common/Button.svelte'
+  import ModalWindowHeader from '@/components/common/ModalWindowHeader.svelte'
   import CredentialField from '@/components/accounts/CredentialField.svelte'
   import StatusBadge from '@/components/common/StatusBadge.svelte'
-  import type { Account } from '@/services/wails-api'
-  import { formatNumber, formatUnixSeconds } from '@/utils/formatters'
-  import { formatRelativeReset, getNearestFutureResetAt, getQuotaTone } from '@/utils/account-quota'
-  import { copyTextToClipboard, hasClipboardWrite } from '@/utils/browser'
+  import type { Account } from '@/features/accounts/types'
+  import { formatNumber, formatUnixSeconds } from '@/shared/lib/formatters'
+  import { formatRelativeReset, getNearestFutureResetAt, getQuotaTone } from '@/features/accounts/lib/account-quota'
+  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/lib/browser'
 
   export let open = false
   export let account: Account | null = null
@@ -103,15 +104,12 @@
     on:close={closeModal}
   >
     <svelte:fragment slot="header">
-      <div class="mb-2 flex items-center gap-2">
-        <div class="flex items-center gap-2">
-          <span class="h-3 w-3 rounded-full bg-[#ef4444]" aria-hidden="true" />
-          <span class="h-3 w-3 rounded-full bg-[#f59e0b]" aria-hidden="true" />
-          <span class="h-3 w-3 rounded-full bg-[#22c55e]" aria-hidden="true" />
-        </div>
-      </div>
-      <h2 class="truncate text-sm font-semibold text-text-primary">Account Details</h2>
-      <p class="mt-1 truncate text-[11px] text-text-secondary">{account.email || '-'}</p>
+      <ModalWindowHeader
+        title="Account Details"
+        description={account.email || '-'}
+        titleClassName="truncate text-sm font-semibold text-text-primary"
+        descriptionClassName="mt-1 truncate text-[11px] text-text-secondary"
+      />
     </svelte:fragment>
 
     <div class="grid gap-3 lg:grid-cols-2">

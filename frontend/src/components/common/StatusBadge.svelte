@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cn } from '@/utils/cn'
+  import { cn } from '@/shared/lib/cn'
 
   type BadgeTone = 'neutral' | 'success' | 'error' | 'info' | 'warning'
 

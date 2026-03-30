@@ -46,7 +46,7 @@ func logContains(entries []logger.Entry, fragment string) bool {
 	return false
 }
 
-func TestHandleResponses_AlwaysStreamsAndLogsUsage(t *testing.T) {
+func TestHandleResponses_RespectsNonStreamRequestsAndLogsUsage(t *testing.T) {
 	server, _, log := newTestServer(t)
 	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{
 		Text:         "hello from responses",
@@ -65,11 +65,11 @@ func TestHandleResponses_AlwaysStreamsAndLogsUsage(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
 	}
-	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
-		t.Fatalf("expected event stream content type, got %q", contentType)
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "response.created") || !strings.Contains(body, "response.output_text.delta") {
+	if !strings.Contains(body, `"object":"response"`) || !strings.Contains(body, "hello from responses") {
 		t.Fatalf("unexpected responses body: %s", body)
 	}
 	entries := log.Entries(50)
@@ -79,35 +79,18 @@ func TestHandleResponses_AlwaysStreamsAndLogsUsage(t *testing.T) {
 	if !logContains(entries, `total_tokens=8`) {
 		t.Fatalf("expected usage log entry, got %+v", entries)
 	}
-	if !logContains(entries, `status="streaming"`) {
-		t.Fatalf("expected streaming completion log entry, got %+v", entries)
+	if !logContains(entries, `status="completed"`) {
+		t.Fatalf("expected completed log entry, got %+v", entries)
 	}
 }
 
-func TestHandleResponses_StreamsEvenWhenPayloadRequestsFalse(t *testing.T) {
+func TestHandleResponses_StreamsWhenPayloadRequestsTrue(t *testing.T) {
 	server, _, _ := newTestServer(t)
 	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{
 		Text:  "streamed",
 		Model: "gpt-5.4",
 		Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2},
 	}}
-
-	req := httptest.NewRequest(http.MethodPost, RouteOpenAIResponses, strings.NewReader(`{"model":"gpt-5.4","input":"hello","stream":false}`))
-	rr := httptest.NewRecorder()
-
-	server.handleResponses(rr, req)
-
-	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
-		t.Fatalf("expected event stream content type, got %q", contentType)
-	}
-	if !strings.Contains(rr.Body.String(), "response.created") {
-		t.Fatalf("expected SSE response body, got %s", rr.Body.String())
-	}
-}
-
-func TestHandleResponses_StreamsEvenWhenPayloadRequestsTrue(t *testing.T) {
-	server, _, _ := newTestServer(t)
-	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{Text: "stream", Model: "gpt-5.4", Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}}}
 
 	req := httptest.NewRequest(http.MethodPost, RouteOpenAIResponses, strings.NewReader(`{"model":"gpt-5.4","input":"hello","stream":true}`))
 	rr := httptest.NewRecorder()
@@ -122,11 +105,101 @@ func TestHandleResponses_StreamsEvenWhenPayloadRequestsTrue(t *testing.T) {
 	}
 }
 
-func TestHandleAnthropicMessages_AlwaysStreams(t *testing.T) {
+func TestHandleChatCompletions_ReturnsJSONWhenPayloadRequestsFalse(t *testing.T) {
 	server, _, _ := newTestServer(t)
-	server.kiro = fakeExecutor{outcome: provider.CompletionOutcome{Text: "kiro stream", Model: "claude-sonnet-4.5", Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}}}
+	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{Text: "done", Model: "gpt-5.4", Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}}}
 
-	req := httptest.NewRequest(http.MethodPost, RouteAnthropicMessages, strings.NewReader(`{"model":"claude-sonnet-4.5","max_tokens":64,"stream":false,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
+	req := httptest.NewRequest(http.MethodPost, RouteOpenAIChatCompletions, strings.NewReader(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}],"stream":false}`))
+	rr := httptest.NewRecorder()
+
+	server.handleChatCompletions(rr, req)
+
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
+	}
+	if !strings.Contains(rr.Body.String(), `"content":"done"`) {
+		t.Fatalf("expected JSON chat response body, got %s", rr.Body.String())
+	}
+}
+
+func TestHandleAnthropicMessages_ReturnsJSONWhenPayloadRequestsFalse(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{Text: "anthropic codex stream", Model: "gpt-5.4", Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}}}
+
+	req := httptest.NewRequest(http.MethodPost, RouteAnthropicMessages, strings.NewReader(`{"model":"gpt-5.4","max_tokens":64,"stream":false,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
+	rr := httptest.NewRecorder()
+
+	server.handleAnthropicMessages(rr, req)
+
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
+	}
+
+	if !strings.Contains(rr.Body.String(), `"type":"message"`) {
+		t.Fatalf("expected anthropic JSON body, got %s", rr.Body.String())
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code=%d", rr.Code)
+	}
+
+}
+
+func TestHandleChatCompletions_RoutesKiroModelsToKiroExecutor(t *testing.T) {
+	server, _, log := newTestServer(t)
+	server.kiro = fakeExecutor{outcome: provider.CompletionOutcome{
+		Text:         "kiro stream",
+		Model:        "claude-sonnet-4.5",
+		Provider:     "kiro",
+		AccountID:    "acct-kiro",
+		AccountLabel: "kiro@example.com",
+		Usage:        config.ProxyStats{PromptTokens: 2, CompletionTokens: 4, TotalTokens: 6},
+	}}
+
+	req := httptest.NewRequest(http.MethodPost, RouteOpenAIChatCompletions, strings.NewReader(`{"model":"claude-sonnet-4.5","messages":[{"role":"user","content":"hello"}],"stream":false}`))
+	rr := httptest.NewRecorder()
+
+	server.handleChatCompletions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
+	}
+	if !strings.Contains(rr.Body.String(), "kiro stream") {
+		t.Fatalf("unexpected response body: %s", rr.Body.String())
+	}
+	entries := log.Entries(50)
+	if !logContains(entries, `provider="kiro"`) {
+		t.Fatalf("expected kiro provider log entry, got %+v", entries)
+	}
+}
+
+func TestCompatV1AnthropicMessagesRoute(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{Text: "compat anthropic stream", Model: "gpt-5.4", Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}}}
+
+	req := httptest.NewRequest(http.MethodPost, compatV1Path(RouteAnthropicMessages), strings.NewReader(`{"model":"gpt-5.4","max_tokens":64,"stream":false,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
+	rr := httptest.NewRecorder()
+
+	server.newMux().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
+	}
+	if !strings.Contains(rr.Body.String(), `"type":"message"`) {
+		t.Fatalf("expected anthropic JSON body, got %s", rr.Body.String())
+	}
+}
+
+func TestHandleAnthropicMessages_StreamsWhenPayloadRequestsTrue(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	server.codex = fakeExecutor{outcome: provider.CompletionOutcome{Text: "anthropic codex stream", Model: "gpt-5.4", Usage: config.ProxyStats{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}}}
+
+	req := httptest.NewRequest(http.MethodPost, RouteAnthropicMessages, strings.NewReader(`{"model":"gpt-5.4","max_tokens":64,"stream":true,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
 	rr := httptest.NewRecorder()
 
 	server.handleAnthropicMessages(rr, req)
@@ -134,25 +207,115 @@ func TestHandleAnthropicMessages_AlwaysStreams(t *testing.T) {
 	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
 		t.Fatalf("expected stream content type, got %q", contentType)
 	}
-
-	reqThinking := httptest.NewRequest(http.MethodPost, RouteAnthropicMessages, strings.NewReader(`{"model":"claude-sonnet-4.5-thinking","max_tokens":64,"stream":false,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
-	rrThinking := httptest.NewRecorder()
-
-	server.handleAnthropicMessages(rrThinking, reqThinking)
-
-	if contentType := rrThinking.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
-		t.Fatalf("expected stream content type with thinking alias, got %q", contentType)
-	}
-	if !strings.Contains(rrThinking.Body.String(), "message_start") {
-		t.Fatalf("expected anthropic SSE body, got %s", rrThinking.Body.String())
-	}
 	if !strings.Contains(rr.Body.String(), "message_start") {
-		t.Fatalf("expected anthropic SSE body without thinking alias, got %s", rr.Body.String())
+		t.Fatalf("expected anthropic SSE body, got %s", rr.Body.String())
 	}
-	if rr.Code != http.StatusOK || rrThinking.Code != http.StatusOK {
-		t.Fatalf("unexpected status codes base=%d thinking=%d", rr.Code, rrThinking.Code)
+}
+
+func TestCompatV1AnthropicCountTokensRoute(t *testing.T) {
+	server, _, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, compatV1Path(RouteAnthropicCountTokens), strings.NewReader(`{"model":"claude-sonnet-4.5","messages":[{"role":"user","content":[{"type":"text","text":"hello there"}]}]}`))
+	rr := httptest.NewRecorder()
+
+	server.newMux().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if contentType := rr.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected json content type, got %q", contentType)
+	}
+	if !strings.Contains(rr.Body.String(), `"input_tokens"`) {
+		t.Fatalf("expected token count response, got %s", rr.Body.String())
+	}
+}
+
+func TestCompatV1HealthRoute(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, compatV1Path(RouteHealth), nil)
+	rr := httptest.NewRecorder()
+
+	server.newMux().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"status":"ok"`) {
+		t.Fatalf("expected health response body, got %s", rr.Body.String())
+	}
+}
+
+func TestCompatDoubleV1HealthRoute(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, compatV1Path(compatV1Path(RouteHealth)), nil)
+	rr := httptest.NewRecorder()
+
+	server.newMux().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"status":"ok"`) {
+		t.Fatalf("expected health response body, got %s", rr.Body.String())
+	}
+}
+
+func TestCompatV1RootRoute(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, compatV1Path("/"), nil)
+	rr := httptest.NewRecorder()
+
+	server.newMux().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"name":"CLIro-Go Gateway"`) {
+		t.Fatalf("expected gateway metadata body, got %s", rr.Body.String())
+	}
+}
+
+func TestStreamAnthropicMessages_EmitsSignatureDeltaAndRemappedToolArgs(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	rr := httptest.NewRecorder()
+
+	server.streamAnthropicMessages(rr, "claude-sonnet-4.5", ir.Response{
+		ID:                "msg_test",
+		Model:             "claude-sonnet-4.5",
+		Thinking:          "plan first",
+		ThinkingSignature: "sig_custom",
+		Text:              "done",
+		ToolCalls:         []ir.ToolCall{{ID: "toolu_1", Name: "Grep", Arguments: `{"query":"needle","paths":["src"]}`}},
+		Usage:             ir.Usage{InputTokens: 7, OutputTokens: 9},
+	})
+
+	body := rr.Body.String()
+	if !strings.Contains(body, `"type":"signature_delta"`) {
+		t.Fatalf("missing signature_delta event: %s", body)
+	}
+	if !strings.Contains(body, `"signature":""`) {
+		t.Fatalf("expected empty signature in thinking block start: %s", body)
+	}
+	if !strings.Contains(body, `partial_json":"{\"path\":\"src\",\"pattern\":\"needle\"}"`) {
+		t.Fatalf("expected remapped tool args in stream: %s", body)
+	}
+	if strings.Contains(body, `\"query\"`) {
+		t.Fatalf("expected query key to be remapped out: %s", body)
+	}
+	if !strings.Contains(body, `"input_tokens":7`) || !strings.Contains(body, `"output_tokens":9`) {
+		t.Fatalf("expected usage tokens in stream: %s", body)
 	}
 
+	thinkingDeltaIndex := strings.Index(body, `"type":"thinking_delta"`)
+	signatureDeltaIndex := strings.Index(body, `"type":"signature_delta"`)
+	contentBlockStopIndex := strings.Index(body, `event: content_block_stop`)
+	if thinkingDeltaIndex == -1 || signatureDeltaIndex == -1 || contentBlockStopIndex == -1 {
+		t.Fatalf("missing expected event sequence: %s", body)
+	}
+	if !(thinkingDeltaIndex < signatureDeltaIndex && signatureDeltaIndex < contentBlockStopIndex) {
+		t.Fatalf("unexpected thinking event order: %s", body)
+	}
 }
 
 func TestHandleModels_RejectsConflictingSecurityHeaders(t *testing.T) {

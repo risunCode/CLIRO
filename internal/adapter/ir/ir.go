@@ -43,11 +43,17 @@ type Request struct {
 }
 
 type Message struct {
-	Role       Role
-	Content    any
-	Name       string
-	ToolCalls  []ToolCall
-	ToolCallID string
+	Role           Role
+	Content        any
+	Name           string
+	ToolCalls      []ToolCall
+	ToolCallID     string
+	ThinkingBlocks []ThinkingBlock
+}
+
+type ThinkingBlock struct {
+	Thinking  string
+	Signature string
 }
 
 type Tool struct {
@@ -63,13 +69,14 @@ type ToolCall struct {
 }
 
 type Response struct {
-	ID         string
-	Model      string
-	Text       string
-	Thinking   string
-	ToolCalls  []ToolCall
-	Usage      Usage
-	StopReason string
+	ID                string
+	Model             string
+	Text              string
+	Thinking          string
+	ThinkingSignature string
+	ToolCalls         []ToolCall
+	Usage             Usage
+	StopReason        string
 }
 
 type Usage struct {
@@ -81,9 +88,10 @@ type Usage struct {
 }
 
 type Event struct {
-	Type       string
-	TextDelta  string
-	ThinkDelta string
-	ToolDelta  any
-	Done       bool
+	Type           string
+	TextDelta      string
+	ThinkDelta     string
+	SignatureDelta string
+	ToolDelta      any
+	Done           bool
 }

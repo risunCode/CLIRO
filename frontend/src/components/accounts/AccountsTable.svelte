@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Account } from '@/services/wails-api'
+  import type { Account } from '@/features/accounts/types'
   import AccountRow from '@/components/accounts/AccountRow.svelte'
 
 export let accounts: Account[] = []

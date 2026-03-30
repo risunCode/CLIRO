@@ -49,6 +49,7 @@ func convertAnthropicToOpenAI(req anthropic.MessagesRequest) (openai.ChatRequest
 	}
 
 	for _, message := range req.Messages {
+		messageContent := stripAnthropicCacheControl(message.Content)
 		role := strings.ToLower(strings.TrimSpace(message.Role))
 		if role == "" {
 			role = "user"
@@ -57,12 +58,15 @@ func convertAnthropicToOpenAI(req anthropic.MessagesRequest) (openai.ChatRequest
 			role = "user"
 		}
 
-		text, toolCalls, toolResults := convertAnthropicMessageContent(role, message.Content)
+		text, toolCalls, toolResults, thinkingBlocks := convertAnthropicMessageContent(role, messageContent)
 		if role == "assistant" {
-			if strings.TrimSpace(text) == "" && len(toolCalls) == 0 {
+			if strings.TrimSpace(text) == "" && len(toolCalls) == 0 && len(thinkingBlocks) == 0 {
 				continue
 			}
 			assistantMessage := openai.Message{Role: "assistant", ToolCalls: toolCalls}
+			if len(thinkingBlocks) > 0 {
+				assistantMessage.AdditionalKwargs = thinkingBlocksToAdditionalKwargs(thinkingBlocks)
+			}
 			if strings.TrimSpace(text) != "" {
 				assistantMessage.Content = text
 			} else {
@@ -76,9 +80,15 @@ func convertAnthropicToOpenAI(req anthropic.MessagesRequest) (openai.ChatRequest
 			out.Messages = append(out.Messages, toolResults...)
 		}
 		if strings.TrimSpace(text) != "" {
-			out.Messages = append(out.Messages, openai.Message{Role: "user", Content: text})
+			userMessage := openai.Message{Role: "user", Content: text}
+			if len(thinkingBlocks) > 0 {
+				userMessage.AdditionalKwargs = thinkingBlocksToAdditionalKwargs(thinkingBlocks)
+			}
+			out.Messages = append(out.Messages, userMessage)
 		}
 	}
+
+	out.Messages = mergeConsecutiveOpenAIMessages(out.Messages)
 
 	if len(out.Messages) == 0 {
 		return out, fmt.Errorf("messages are empty")
@@ -113,19 +123,21 @@ func convertAnthropicTools(tools []anthropic.Tool) []openai.Tool {
 	return result
 }
 
-func convertAnthropicMessageContent(role string, content any) (string, []openai.ToolCall, []openai.Message) {
+func convertAnthropicMessageContent(role string, content any) (string, []openai.ToolCall, []openai.Message, []ir.ThinkingBlock) {
 	switch typed := content.(type) {
 	case string:
-		return strings.TrimSpace(typed), nil, nil
+		return strings.TrimSpace(typed), nil, nil, nil
 	case []any:
 		textParts := make([]string, 0, len(typed))
 		toolCalls := make([]openai.ToolCall, 0)
 		toolResults := make([]openai.Message, 0)
+		thinkingBlocks := make([]ir.ThinkingBlock, 0)
 
 		for _, item := range typed {
-			block, ok := item.(map[string]any)
+			sanitized := stripAnthropicCacheControl(item)
+			block, ok := sanitized.(map[string]any)
 			if !ok {
-				fallback := strings.TrimSpace(anthropicContentToText(item))
+				fallback := strings.TrimSpace(anthropicContentToText(sanitized))
 				if fallback != "" {
 					textParts = append(textParts, fallback)
 				}
@@ -140,8 +152,11 @@ func convertAnthropicMessageContent(role string, content any) (string, []openai.
 				}
 			case "thinking":
 				if text, ok := block["thinking"].(string); ok && strings.TrimSpace(text) != "" {
-					textParts = append(textParts, text)
+					signature, _ := block["signature"].(string)
+					thinkingBlocks = append(thinkingBlocks, ir.ThinkingBlock{Thinking: text, Signature: strings.TrimSpace(signature)})
 				}
+			case "redacted_thinking":
+				continue
 			case "tool_use":
 				if role != "assistant" {
 					continue
@@ -180,7 +195,7 @@ func convertAnthropicMessageContent(role string, content any) (string, []openai.
 				if toolUseID == "" {
 					continue
 				}
-				toolContent := strings.TrimSpace(anthropicContentToText(block["content"]))
+				toolContent := strings.TrimSpace(anthropicContentToText(stripAnthropicCacheControl(block["content"])))
 				if toolContent == "" {
 					toolContent = anthropicFallbackUserContent
 				}
@@ -197,9 +212,9 @@ func convertAnthropicMessageContent(role string, content any) (string, []openai.
 			}
 		}
 
-		return strings.TrimSpace(strings.Join(textParts, "\n")), toolCalls, toolResults
+		return strings.TrimSpace(strings.Join(textParts, "\n")), toolCalls, toolResults, thinkingBlocks
 	default:
-		return strings.TrimSpace(anthropicContentToText(content)), nil, nil
+		return strings.TrimSpace(anthropicContentToText(stripAnthropicCacheControl(content))), nil, nil, nil
 	}
 }
 
@@ -222,7 +237,10 @@ func anthropicSystemToText(system any) string {
 }
 
 func anthropicContentToText(content any) string {
+	content = stripAnthropicCacheControl(content)
 	switch typed := content.(type) {
+	case nil:
+		return ""
 	case string:
 		return strings.TrimSpace(typed)
 	case []any:
@@ -239,6 +257,11 @@ func anthropicContentToText(content any) string {
 				case "thinking":
 					if thinking, ok := block["thinking"].(string); ok && strings.TrimSpace(thinking) != "" {
 						parts = append(parts, thinking)
+					}
+					continue
+				case "redacted_thinking":
+					if data := strings.TrimSpace(anthropicContentToText(block["data"])); data != "" {
+						parts = append(parts, "[Redacted Thinking: "+data+"]")
 					}
 					continue
 				case "tool_result":
@@ -264,13 +287,58 @@ func anthropicContentToText(content any) string {
 		}
 		return strings.TrimSpace(strings.Join(parts, "\n"))
 	case map[string]any:
+		if blockType, _ := typed["type"].(string); strings.EqualFold(strings.TrimSpace(blockType), "redacted_thinking") {
+			if data := strings.TrimSpace(anthropicContentToText(typed["data"])); data != "" {
+				return "[Redacted Thinking: " + data + "]"
+			}
+		}
 		if text, ok := typed["text"].(string); ok && strings.TrimSpace(text) != "" {
 			return strings.TrimSpace(text)
+		}
+		if thinking, ok := typed["thinking"].(string); ok && strings.TrimSpace(thinking) != "" {
+			return strings.TrimSpace(thinking)
 		}
 		encoded, _ := json.Marshal(typed)
 		return strings.TrimSpace(string(encoded))
 	default:
 		encoded, _ := json.Marshal(typed)
 		return strings.TrimSpace(string(encoded))
+	}
+}
+
+func thinkingBlocksToAdditionalKwargs(blocks []ir.ThinkingBlock) map[string]any {
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	metadata := make([]any, 0, len(blocks))
+	for _, block := range blocks {
+		metadata = append(metadata, map[string]any{
+			"thinking":  block.Thinking,
+			"signature": block.Signature,
+		})
+	}
+	return map[string]any{"thinking_blocks": metadata}
+}
+
+func stripAnthropicCacheControl(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		cleaned := make([]any, 0, len(typed))
+		for _, item := range typed {
+			cleaned = append(cleaned, stripAnthropicCacheControl(item))
+		}
+		return cleaned
+	case map[string]any:
+		cleaned := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if key == "cache_control" {
+				continue
+			}
+			cleaned[key] = stripAnthropicCacheControl(item)
+		}
+		return cleaned
+	default:
+		return value
 	}
 }

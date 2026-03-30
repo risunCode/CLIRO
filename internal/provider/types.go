@@ -73,15 +73,16 @@ type AnthropicTool struct {
 }
 
 type CompletionOutcome struct {
-	Text         string
-	Thinking     string
-	ToolUses     []ToolUse
-	Usage        config.ProxyStats
-	ID           string
-	Model        string
-	Provider     string
-	AccountID    string
-	AccountLabel string
+	Text              string
+	Thinking          string
+	ThinkingSignature string
+	ToolUses          []ToolUse
+	Usage             config.ProxyStats
+	ID                string
+	Model             string
+	Provider          string
+	AccountID         string
+	AccountLabel      string
 }
 
 type ToolUse struct {

@@ -19,6 +19,7 @@ import (
 
 	"cliro-go/internal/config"
 	"cliro-go/internal/logger"
+	"cliro-go/internal/platform"
 
 	"github.com/google/uuid"
 )
@@ -30,9 +31,10 @@ const (
 	oauthRedirectURI    = "http://localhost:1455/auth/callback"
 	oauthCallbackAddr   = "127.0.0.1:1455"
 	defaultOAuthTimeout = 15 * time.Minute
-	codexVersion        = "0.117.0"
-	codexUserAgent      = "codex_cli_rs/0.117.0 (Macintosh; Intel Mac OS X 10_15_7)"
+	codexVersion    = "0.117.0"
 )
+
+var codexUserAgent = platform.BuildOpencodeUserAgent()
 
 type SessionStatus string
 
@@ -63,10 +65,15 @@ type Manager struct {
 	store          *config.Manager
 	log            *logger.Logger
 	client         *http.Client
+	quotaRefresher quotaRefresher
 	mu             sync.RWMutex
 	oauthSessions  map[string]*oauthSession
 	kiroSessions   map[string]*kiroAuthSession
 	callbackServer *http.Server
+}
+
+type quotaRefresher interface {
+	RefreshQuotaOnly(accountID string) error
 }
 
 type oauthSession struct {
@@ -117,6 +124,16 @@ func (m *Manager) httpClient() *http.Client {
 	return &http.Client{Timeout: 60 * time.Second}
 }
 
+func (m *Manager) HTTPClient() *http.Client {
+	return m.httpClient()
+}
+
+func (m *Manager) SetQuotaRefresher(refresher quotaRefresher) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.quotaRefresher = refresher
+}
+
 func (m *Manager) SetHTTPTimeout(timeout time.Duration) {
 	if timeout <= 0 {
 		return
@@ -125,6 +142,15 @@ func (m *Manager) SetHTTPTimeout(timeout time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.client = &http.Client{Timeout: timeout}
+}
+
+func (m *Manager) SetHTTPClient(client *http.Client) {
+	if client == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.client = client
 }
 
 func (m *Manager) Shutdown(ctx context.Context) error {
@@ -252,6 +278,7 @@ func buildCodexAuthURL(state, challenge string) string {
 		"prompt":                     {"login"},
 		"id_token_add_organizations": {"true"},
 		"codex_cli_simplified_flow":  {"true"},
+		"originator":            {"opencode"},
 	}
 	return oauthAuthorizeURL + "?" + params.Encode()
 }
@@ -420,8 +447,13 @@ func (m *Manager) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := m.RefreshQuota(account.ID); err != nil {
-		m.log.Warn("quota", "initial quota refresh failed for "+account.Email+": "+err.Error())
+	m.mu.RLock()
+	quotaRefresher := m.quotaRefresher
+	m.mu.RUnlock()
+	if quotaRefresher != nil {
+		if err := quotaRefresher.RefreshQuotaOnly(account.ID); err != nil {
+			m.log.Warn("quota", "initial quota refresh failed for "+account.Email+": "+err.Error())
+		}
 	}
 
 	m.mu.Lock()
