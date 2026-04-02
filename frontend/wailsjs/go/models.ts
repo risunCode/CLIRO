@@ -440,6 +440,8 @@ export namespace main {
 	    accounts: config.Account[];
 	    stats: config.ProxyStats;
 	    startupWarnings?: config.StartupWarning[];
+	    traySupported: boolean;
+	    trayAvailable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new State(source);
@@ -461,6 +463,8 @@ export namespace main {
 	        this.accounts = this.convertValues(source["accounts"], config.Account);
 	        this.stats = this.convertValues(source["stats"], config.ProxyStats);
 	        this.startupWarnings = this.convertValues(source["startupWarnings"], config.StartupWarning);
+	        this.traySupported = source["traySupported"];
+	        this.trayAvailable = source["trayAvailable"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

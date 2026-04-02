@@ -40,8 +40,12 @@ func RequestFromIR(request contract.Request) ChatRequest {
 
 	tools := make([]Tool, 0, len(request.Tools))
 	for _, tool := range request.Tools {
+		toolType := tool.Type
+		if toolType == "" {
+			toolType = "function"
+		}
 		tools = append(tools, Tool{
-			Type: "function",
+			Type: toolType,
 			Function: ToolFunction{
 				Name:        tool.Name,
 				Description: tool.Description,

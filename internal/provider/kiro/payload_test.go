@@ -255,6 +255,26 @@ func TestBuildRequestPayload_SplitsParallelToolRoundTripsIntoAlternatingHistory(
 	}
 }
 
+func TestBuildRequestPayload_FiltersUnknownToolResultsAgainstKnownToolUses(t *testing.T) {
+	payload, err := buildRequestPayload(provider.ChatRequest{
+		Model: "claude-sonnet-4.5",
+		Tools: []provider.Tool{{Type: "function", Function: provider.ToolFunction{Name: "Read", Parameters: map[string]any{"type": "object"}}}},
+		Messages: []provider.Message{
+			{Role: "user", Content: "inspect repo"},
+			{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "tool_1", Type: "function", Function: provider.ToolCallTarget{Name: "Read", Arguments: `{"file_path":"README.md"}`}}}},
+			{Role: "tool", ToolCallID: "tool_1", Content: "README contents"},
+			{Role: "user", Content: []any{map[string]any{"type": "tool_result", "tool_use_id": "unknown", "content": "ignored"}}},
+		},
+	}, config.Account{}, config.ThinkingSettings{})
+	if err != nil {
+		t.Fatalf("buildRequestPayload: %v", err)
+	}
+	current := payload.ConversationState.CurrentMessage.UserInputMessage
+	if current.UserInputMessageContext != nil && len(current.UserInputMessageContext.ToolResults) != 0 {
+		t.Fatalf("expected unknown tool result to be removed, got %#v", current.UserInputMessageContext.ToolResults)
+	}
+}
+
 func TestBuildRequestPayload_ForcedThinkingInjectionModes(t *testing.T) {
 	tests := []struct {
 		name       string

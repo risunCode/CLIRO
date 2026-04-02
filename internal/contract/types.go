@@ -72,6 +72,7 @@ type ThinkingBlock struct {
 }
 
 type Tool struct {
+	Type        string
 	Name        string
 	Description string
 	Schema      any

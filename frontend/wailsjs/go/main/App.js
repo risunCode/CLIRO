@@ -18,8 +18,16 @@ export function ClearLogs() {
   return window['go']['main']['App']['ClearLogs']();
 }
 
+export function ConfirmQuit() {
+  return window['go']['main']['App']['ConfirmQuit']();
+}
+
 export function DeleteAccount(arg1) {
   return window['go']['main']['App']['DeleteAccount'](arg1);
+}
+
+export function ExitFromTray() {
+  return window['go']['main']['App']['ExitFromTray']();
 }
 
 export function ForceRefreshAllQuotas() {
@@ -70,6 +78,10 @@ export function GetState() {
   return window['go']['main']['App']['GetState']();
 }
 
+export function HideToTray() {
+  return window['go']['main']['App']['HideToTray']();
+}
+
 export function ImportAccounts(arg1) {
   return window['go']['main']['App']['ImportAccounts'](arg1);
 }
@@ -108,6 +120,10 @@ export function RefreshQuota(arg1) {
 
 export function RegenerateProxyAPIKey() {
   return window['go']['main']['App']['RegenerateProxyAPIKey']();
+}
+
+export function RestoreWindow() {
+  return window['go']['main']['App']['RestoreWindow']();
 }
 
 export function SaveCLISyncFileContent(arg1, arg2, arg3) {
@@ -200,4 +216,8 @@ export function SyncCodexAccountToOpencodeAuth(arg1) {
 
 export function ToggleAccount(arg1, arg2) {
   return window['go']['main']['App']['ToggleAccount'](arg1, arg2);
+}
+
+export function ToggleProxyFromTray() {
+  return window['go']['main']['App']['ToggleProxyFromTray']();
 }

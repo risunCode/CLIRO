@@ -16,9 +16,10 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "cliro-go",
-		Width:  1200,
-		Height: 700,
+		Title:             "cliro-go",
+		Width:             1200,
+		Height:            700,
+		HideWindowOnClose: false,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId:               "cliro-go-single-instance-v1",
 			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
@@ -28,6 +29,7 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 10, A: 1},
 		OnStartup:        app.startup,
+		OnBeforeClose:    app.beforeCloseGuard,
 		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,

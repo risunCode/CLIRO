@@ -46,8 +46,8 @@ func TestRuntimeClient_RetriesAfterFirstTokenTimeout(t *testing.T) {
 	if len(requestHosts) != 2 {
 		t.Fatalf("expected 2 requests, got %d", len(requestHosts))
 	}
-	if requestTargets[0] != "" {
-		t.Fatalf("unexpected primary target header: %#v", requestTargets)
+	if requestTargets[0] == requestTargets[1] {
+		t.Fatalf("expected endpoint fallback to change target header, got %#v", requestTargets)
 	}
 }
 

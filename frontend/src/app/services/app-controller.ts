@@ -72,14 +72,20 @@ export interface AppShellState {
 }
 
 export interface AppOverlayState {
+  showClosePrompt: boolean
   showUpdatePrompt: boolean
   showConfigurationErrorModal: boolean
   startupWarnings: StartupWarningEntry[]
   updateInfo: UpdateInfo | null
+  traySupported: boolean
+  trayAvailable: boolean
 }
 
 export interface AppActions {
   setActiveTab: (tabId: AppTabId) => void
+  dismissClosePrompt: () => void
+  confirmQuit: () => Promise<void>
+  hideToTray: () => Promise<void>
   dismissConfigurationErrorModal: () => void
   dismissUpdatePrompt: () => void
   openUpdateReleasePage: () => Promise<void>
@@ -169,10 +175,13 @@ const initialShellState: AppShellState = {
 }
 
 const initialOverlayState: AppOverlayState = {
+  showClosePrompt: false,
   showUpdatePrompt: false,
   showConfigurationErrorModal: false,
   startupWarnings: [],
-  updateInfo: null
+  updateInfo: null,
+  traySupported: false,
+  trayAvailable: false
 }
 
 export function createAppController(): AppController {
@@ -182,6 +191,10 @@ export function createAppController(): AppController {
   let startupWarningsShown = false
   let unsubscribeLogs: (() => void) | null = null
   let unsubscribeSecondInstance: (() => void) | null = null
+  let unsubscribeCloseRequested: (() => void) | null = null
+  let unsubscribeWindowRestored: (() => void) | null = null
+  let unsubscribeProxyStateChanged: (() => void) | null = null
+  let unsubscribeTrayStateChanged: (() => void) | null = null
 
   const patchShell = (patch: Partial<AppShellState>): void => {
     shell.update((current) => ({ ...current, ...patch }))
@@ -291,10 +304,36 @@ export function createAppController(): AppController {
     }
   }
 
+  const syncTrayAvailability = (nextState: AppState | null): void => {
+    patchOverlays({
+      traySupported: nextState?.traySupported === true,
+      trayAvailable: nextState?.trayAvailable === true
+    })
+  }
+
   const refreshState = async (): Promise<void> => {
     const nextState = await systemApi.getState()
     patchShell({ state: nextState })
     syncStartupWarnings(nextState)
+    syncTrayAvailability(nextState)
+  }
+
+  const refreshStateSafe = async (): Promise<void> => {
+    try {
+      await refreshState()
+    } catch (error) {
+      notifyError('Refresh Snapshot Failed', error)
+    }
+  }
+
+  const refreshStateForClosePrompt = async (): Promise<void> => {
+    try {
+      const nextState = await systemApi.getState()
+      patchShell({ state: nextState })
+      syncTrayAvailability(nextState)
+    } catch {
+      // Best effort: if state refresh fails, keep current snapshot and still show close prompt.
+    }
   }
 
   const refreshAccounts = async (): Promise<void> => {
@@ -358,6 +397,14 @@ export function createAppController(): AppController {
     }
   }
 
+  const refreshCoreSafe = async (): Promise<void> => {
+    try {
+      await refreshCore()
+    } catch (error) {
+      notifyError('Refresh Snapshot Failed', error)
+    }
+  }
+
   const refreshCore = async (): Promise<void> => {
     patchShell({ loadingDashboard: true })
     try {
@@ -371,6 +418,7 @@ export function createAppController(): AppController {
         const nextState = await nextStatePromise
         patchShell({ state: nextState })
         syncStartupWarnings(nextState)
+        syncTrayAvailability(nextState)
         successCount += 1
       } catch (error) {
         firstError = error
@@ -401,6 +449,27 @@ export function createAppController(): AppController {
         ? record.message.trim()
         : 'CLIro-Go was already running. Restored the existing window.'
     toastStore.push('info', 'App Reopened', message)
+  }
+
+  const handleCloseRequested = (): void => {
+    void (async () => {
+      await refreshStateForClosePrompt()
+      patchOverlays({ showClosePrompt: true })
+    })()
+  }
+
+  const handleWindowRestored = (): void => {
+    void refreshCoreSafe()
+    void refreshProxyStatusSafe()
+  }
+
+  const handleProxyStateChanged = (): void => {
+    void refreshStateSafe()
+    void refreshProxyStatusSafe()
+  }
+
+  const handleTrayStateChanged = (): void => {
+    void refreshStateSafe()
   }
 
   function runAppAction<T>(options: AppActionOptions<T> & { rethrow: true }): Promise<T>
@@ -781,6 +850,23 @@ export function createAppController(): AppController {
     })
   }
 
+  const handleConfirmQuit = async (): Promise<void> => {
+    await runAppAction({
+      action: () => systemApi.confirmQuit(),
+      errorTitle: 'Close App Failed'
+    })
+  }
+
+  const handleHideToTray = async (): Promise<void> => {
+    await runAppAction({
+      action: () => systemApi.hideToTray(),
+      onSuccess: () => {
+        patchOverlays({ showClosePrompt: false })
+      },
+      errorTitle: 'Minimize to Tray Failed'
+    })
+  }
+
   const handleSetAllowLAN = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Proxy Network Mode Updated',
@@ -1028,6 +1114,11 @@ export function createAppController(): AppController {
     setActiveTab: (tabId) => {
       patchShell({ activeTab: tabId })
     },
+    dismissClosePrompt: () => {
+      patchOverlays({ showClosePrompt: false })
+    },
+    confirmQuit: handleConfirmQuit,
+    hideToTray: handleHideToTray,
     dismissConfigurationErrorModal: () => {
       patchOverlays({ showConfigurationErrorModal: false })
     },
@@ -1108,6 +1199,10 @@ export function createAppController(): AppController {
     settingsActions,
     initialize: async () => {
       unsubscribeSecondInstance = EventsOn('app:second-instance', handleSecondInstanceNotice)
+      unsubscribeCloseRequested = EventsOn('app:close-requested', handleCloseRequested)
+      unsubscribeWindowRestored = EventsOn('app:window-restored', handleWindowRestored)
+      unsubscribeProxyStateChanged = EventsOn('app:proxy-state-changed', handleProxyStateChanged)
+      unsubscribeTrayStateChanged = EventsOn('app:tray-state-changed', handleTrayStateChanged)
 
       try {
         await refreshCore()
@@ -1126,6 +1221,14 @@ export function createAppController(): AppController {
       unsubscribeLogs = null
       unsubscribeSecondInstance?.()
       unsubscribeSecondInstance = null
+      unsubscribeCloseRequested?.()
+      unsubscribeCloseRequested = null
+      unsubscribeWindowRestored?.()
+      unsubscribeWindowRestored = null
+      unsubscribeProxyStateChanged?.()
+      unsubscribeProxyStateChanged = null
+      unsubscribeTrayStateChanged?.()
+      unsubscribeTrayStateChanged = null
     }
   }
 }

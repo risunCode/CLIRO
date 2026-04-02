@@ -18,8 +18,8 @@ const (
 	DeviceTokenURL      = "https://oidc.us-east-1.amazonaws.com/token"
 	BuilderStartURL     = "https://view.awsapps.com/start"
 	BuilderClientName   = "kiro-oauth-client"
-	RuntimeUserAgent    = "aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.0.27 m/E KiroIDE-0.10.32"
-	RuntimeAmzUserAgent = "aws-sdk-js/1.0.27 KiroIDE 0.10.32"
+	RuntimeUserAgent    = "aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.2.15 m/E KiroIDE-0.11.107"
+	RuntimeAmzUserAgent = "aws-sdk-js/1.2.15 KiroIDE 0.11.107"
 	SocialAuthURL       = "https://prod.us-east-1.auth.desktop.kiro.dev"
 )
 
@@ -157,7 +157,7 @@ func BuildSocialLoginURL(provider SocialProvider, codeChallenge string, state st
 }
 
 func BuildSocialUserAgent() string {
-	return fmt.Sprintf("KiroIDE-0.10.32-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
+	return fmt.Sprintf("KiroIDE-0.11.107-%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
 }
 
 func DetermineAuthMethod(tokens *TokenData) string {

@@ -44,6 +44,81 @@ CLIro-Go currently focuses on:
   - `kilo-cli`
   - `codex-ai`
 
+## User Agent Spoofing
+
+CLIro-Go mimics official client user agents to ensure compatibility with upstream provider APIs.
+
+### Codex Provider (OpenAI)
+
+**Implementation**: `internal/platform/useragent.go`
+
+**Current Version**: `opencode/1.2.27`
+
+**Format**: `opencode/{version} ({os} {osVersion}; {arch})`
+
+**Examples**:
+- Windows: `opencode/1.2.27 (windows 10.0.26100; amd64)`
+- Mac ARM: `opencode/1.2.27 (darwin 23.0.0; arm64)`
+- Mac Intel: `opencode/1.2.27 (darwin 23.0.0; amd64)`
+- Linux: `opencode/1.2.27 (linux 6.5.0; amd64)``
+
+**Headers Sent**:
+- `User-Agent`: Dynamic opencode format with OS detection
+- `Originator`: `opencode`
+- `Session_id`: Random UUID per request
+
+### Kiro Provider (AWS)
+
+**Implementation**: `internal/auth/kiro/types.go`, `internal/provider/kiro/service.go`
+
+**Current Version**: `KiroIDE-0.11.107`
+
+**AWS SDK Version**: `aws-sdk-js/1.2.15`
+
+#### Social Auth Mode (Default)
+
+**Headers Sent**:
+- `User-Agent`: `aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.2.15 m/E KiroIDE-0.11.107-{machineID}`
+- `x-amz-user-agent`: `aws-sdk-js/1.2.15 KiroIDE 0.11.107`
+- `x-amzn-kiro-agent-mode`: `spec`
+
+**Social Auth Specific**:
+- `User-Agent`: `KiroIDE-0.11.107-{uuid}` (for auth endpoints)
+
+#### IDC Auth Mode (IAM Identity Center)
+
+**Headers Sent**:
+- `User-Agent`: `aws-sdk-rust/1.3.9 os/macos lang/rust/1.87.0`
+- `x-amz-user-agent`: `aws-sdk-rust/1.3.9 ua/2.1 api/ssooidc/1.88.0 os/macos lang/rust/1.87.0 m/E app/AmazonQ-For-CLI`
+- `x-amzn-kiro-agent-mode`: `vibe`
+
+#### Device/OIDC Auth
+
+**Headers Sent**:
+- `User-Agent`: `aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/sso-oidc#1.2.15 m/E KiroIDE`
+- `x-amz-user-agent`: `aws-sdk-js/1.2.15 KiroIDE`
+
+### Version Update Guidelines
+
+When updating user agent versions:
+
+1. **Codex/OpenCode**: Update `opencodeVersion` constant in `internal/platform/useragent.go`
+2. **Kiro IDE**: Update version strings in:
+   - `internal/provider/kiro/service.go` (runtime constants)
+   - `internal/auth/kiro/types.go` (auth constants)
+   - `internal/auth/kiro/device.go` (OIDC headers)
+3. **Test**: Verify auth flows and API requests still work after version bump
+4. **Reference**: Check latest versions at:
+   - Codex CLI: `https://www.npmjs.com/package/@openai/codex`
+   - Kiro CLI: `https://kiro.dev/changelog`
+
+### Machine ID Generation
+
+Kiro requests include a random machine ID suffix to simulate unique client instances:
+- Generated via `uuid.NewString()` with hyphens removed
+- Appended to user agent string (e.g., `KiroIDE-0.11.107-a1b2c3d4e5f6...`)
+- Regenerated per request for social auth mode
+
 ## Data Directory
 
 CLIro-Go persists runtime data under `~/.cliro-go/`:
@@ -364,6 +439,58 @@ Default base URL: `http://localhost:8095`
 - **No available accounts**: check enabled flag, cooldown, quota status, and auth validity.
 - **Cloudflared URL missing**: ensure proxy is running and Cloudflared status refreshed.
 - **CLI sync says unsupported target/model**: verify target ID union and local model catalog membership.
+
+## Known Issues & Workarounds
+
+### Web Search Functionality
+
+**Issue**: Built-in `web_search` tool may not work reliably in some scenarios.
+
+**Current Status**:
+- Kiro provider supports web search via MCP (Model Context Protocol) endpoint
+- Implementation: `internal/provider/kiro/websearch.go`
+- Endpoint: `https://q.us-east-1.amazonaws.com/mcp`
+- Works for Kiro accounts when routing through CLIro-Go proxy
+
+**Known Limitation**:
+- MCP-based web search **does not work** when using Kiro provider with Claude Code client
+- This is a known compatibility issue between Kiro's MCP implementation and Claude Code's expectations
+
+**Workaround**:
+- Use external MCP servers for web search functionality with Claude Code
+- Recommended MCP servers:
+  1. **WebSearch-MCP** by mnhlt (recommended for production)
+     - Repository: `https://github.com/mnhlt/WebSearch-MCP`
+  - Self-hosted with Docker
+     - Bypass Cloudflare protection with FlareSolverr
+     - Advanced filtering options (language, region, domains, result type)
+     - Installation: `npx -y @smithery/cli install @mnhlt/WebSearch-MCP --client claude`
+     - Configuration:
+       ```json
+       {
+  "mcpServers": {
+           "websearch": {
+       "command": "npx",
+          "args": ["websearch-mcp"],
+      "env": {
+           "API_URL": "http://localhost:3001",
+    "MAX_SEARCH_RESULT": "5"
+        }
+         }
+         }
+    }
+       ```
+  2. **web-search** by pskill9 (simple alternative)
+     - Repository: `https://github.com/pskill9/web-search`
+     - No API keys required
+     - Lightweight setup (no Docker)
+     - Note: May face rate limiting from Google
+
+**Future Work**:
+- Investigate Kiro MCP compatibility issues with Claude Code
+- Consider implementing alternative web search providers (e.g., Brave Search API, DuckDuckGo)
+- Add configuration option to disable built-in web search and rely on external MCP servers
+- Explore direct integration with external MCP servers as fallback
 
 ## References
 

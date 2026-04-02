@@ -25,9 +25,10 @@ type Message struct {
 }
 
 type Tool struct {
-	Name        string `json:"name"`
+	Type        string `json:"type,omitempty"`
+	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
-	InputSchema any    `json:"input_schema"`
+	InputSchema any    `json:"input_schema,omitempty"`
 }
 
 type CountTokensRequest = MessagesRequest

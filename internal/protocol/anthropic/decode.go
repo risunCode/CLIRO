@@ -33,11 +33,19 @@ func MessagesToIR(req MessagesRequest) (contract.Request, error) {
 
 	tools := make([]contract.Tool, 0, len(req.Tools))
 	for _, tool := range req.Tools {
+		toolType := strings.TrimSpace(tool.Type)
+		if toolType == "" {
+			toolType = "function"
+		}
 		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			name = toolType
+		}
 		if name == "" {
 			continue
 		}
 		tools = append(tools, contract.Tool{
+			Type:        toolType,
 			Name:        name,
 			Description: strings.TrimSpace(tool.Description),
 			Schema:      tool.InputSchema,

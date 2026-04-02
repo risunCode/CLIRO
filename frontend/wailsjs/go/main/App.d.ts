@@ -15,7 +15,11 @@ export function ClearCooldown(arg1:string):Promise<void>;
 
 export function ClearLogs():Promise<void>;
 
+export function ConfirmQuit():Promise<void>;
+
 export function DeleteAccount(arg1:string):Promise<void>;
+
+export function ExitFromTray():Promise<void>;
 
 export function ForceRefreshAllQuotas():Promise<void>;
 
@@ -41,6 +45,8 @@ export function GetProxyStatus():Promise<Record<string, any>>;
 
 export function GetState():Promise<main.State>;
 
+export function HideToTray():Promise<void>;
+
 export function ImportAccounts(arg1:Array<config.Account>):Promise<number>;
 
 export function InstallCloudflared():Promise<void>;
@@ -60,6 +66,8 @@ export function RefreshCloudflaredStatus():Promise<Record<string, any>>;
 export function RefreshQuota(arg1:string):Promise<void>;
 
 export function RegenerateProxyAPIKey():Promise<string>;
+
+export function RestoreWindow():Promise<void>;
 
 export function SaveCLISyncFileContent(arg1:string,arg2:string,arg3:string):Promise<void>;
 
@@ -106,3 +114,5 @@ export function SyncCodexAccountToKiloAuth(arg1:string):Promise<authtoken.KiloAu
 export function SyncCodexAccountToOpencodeAuth(arg1:string):Promise<authtoken.OpencodeAuthSyncResult>;
 
 export function ToggleAccount(arg1:string,arg2:boolean):Promise<void>;
+
+export function ToggleProxyFromTray():Promise<void>;

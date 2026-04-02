@@ -38,7 +38,12 @@ func ResponsesToIR(req ResponsesRequest) (contract.Request, error) {
 
 	tools := make([]contract.Tool, 0, len(req.Tools))
 	for _, tool := range req.Tools {
+		toolType := strings.TrimSpace(tool.Type)
+		if toolType == "" {
+			toolType = "function"
+		}
 		tools = append(tools, contract.Tool{
+			Type:        toolType,
 			Name:        tool.Function.Name,
 			Description: tool.Function.Description,
 			Schema:      tool.Function.Parameters,
@@ -89,7 +94,12 @@ func ChatToIR(req ChatRequest) (contract.Request, error) {
 
 	tools := make([]contract.Tool, 0, len(req.Tools))
 	for _, tool := range req.Tools {
+		toolType := strings.TrimSpace(tool.Type)
+		if toolType == "" {
+			toolType = "function"
+		}
 		tools = append(tools, contract.Tool{
+			Type:        toolType,
 			Name:        tool.Function.Name,
 			Description: tool.Function.Description,
 			Schema:      tool.Function.Parameters,

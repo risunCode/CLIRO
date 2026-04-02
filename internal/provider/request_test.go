@@ -39,6 +39,7 @@ func TestRequestFromIR(t *testing.T) {
 			}},
 		}},
 		Tools: []contract.Tool{{
+			Type:        "function",
 			Name:        "Read",
 			Description: "Read file",
 			Schema:      map[string]any{"type": "object"},
@@ -89,11 +90,36 @@ func TestRequestFromIR(t *testing.T) {
 	if len(got.Tools) != 1 {
 		t.Fatalf("Tools len = %d", len(got.Tools))
 	}
+	if got.Tools[0].Type != "function" {
+		t.Fatalf("tool type = %q", got.Tools[0].Type)
+	}
 	if got.Tools[0].Function.Name != "Read" || got.Tools[0].Function.Description != "Read file" {
 		t.Fatalf("unexpected tool: %#v", got.Tools[0])
 	}
 	if !reflect.DeepEqual(got.Tools[0].Function.Parameters, map[string]any{"type": "object"}) {
 		t.Fatalf("unexpected tool parameters: %#v", got.Tools[0].Function.Parameters)
+	}
+}
+
+func TestRequestFromIRPreservesBuiltinToolType(t *testing.T) {
+	got := RequestFromIR(contract.Request{
+		Endpoint: contract.EndpointAnthropicMessages,
+		Model:    "claude-sonnet-4.5",
+		Messages: []contract.Message{{Role: contract.RoleUser, Content: "search this"}},
+		Tools: []contract.Tool{{
+			Type: "web_search",
+			Name: "web_search",
+		}},
+	})
+
+	if len(got.Tools) != 1 {
+		t.Fatalf("Tools len = %d", len(got.Tools))
+	}
+	if got.Tools[0].Type != "web_search" {
+		t.Fatalf("tool type = %q", got.Tools[0].Type)
+	}
+	if got.Tools[0].Function.Name != "web_search" {
+		t.Fatalf("tool name = %q", got.Tools[0].Function.Name)
 	}
 }
 

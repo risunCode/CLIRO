@@ -1,8 +1,8 @@
 package kiro
 
 import (
-	"cliro-go/internal/util"
 	"bytes"
+	"cliro-go/internal/util"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -271,8 +271,8 @@ func (s *Service) refreshTokens(ctx context.Context, clientID, clientSecret, ref
 func applyOIDCHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("x-amz-user-agent", "aws-sdk-js/1.0.27 KiroIDE")
-	req.Header.Set("User-Agent", "aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/sso-oidc#1.0.27 m/E KiroIDE")
+	req.Header.Set("x-amz-user-agent", "aws-sdk-js/1.2.15 KiroIDE")
+	req.Header.Set("User-Agent", "aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/sso-oidc#1.2.15 m/E KiroIDE")
 	req.Header.Set("amz-sdk-invocation-id", uuid.NewString())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=4")
 }

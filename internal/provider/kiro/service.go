@@ -1,8 +1,8 @@
 package kiro
 
 import (
-	"cliro-go/internal/util"
 	"bytes"
+	"cliro-go/internal/util"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,8 +31,8 @@ const (
 	kiroFallbackTarget      = "AmazonCodeWhispererStreamingService.GenerateAssistantResponse"
 	kiroContentType         = "application/json"
 	kiroAcceptStream        = "application/vnd.amazon.eventstream"
-	kiroRuntimeUserAgent    = "aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.0.27 m/E KiroIDE-0.10.32"
-	kiroRuntimeAmzUserAgent = "aws-sdk-js/1.0.27 KiroIDE 0.10.32"
+	kiroRuntimeUserAgent    = "aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.2.15 m/E KiroIDE-0.11.107"
+	kiroRuntimeAmzUserAgent = "aws-sdk-js/1.2.15 KiroIDE 0.11.107"
 	kiroAgentMode           = "vibe"
 	kiroFirstTokenTimeout   = 10 * time.Second
 	kiroFirstTokenRetries   = 5
@@ -48,8 +48,8 @@ type endpointConfig struct {
 }
 
 var endpointConfigs = []endpointConfig{
-	{Name: "amazonq", URL: kiroPrimaryURL},
 	{Name: "codewhisperer", URL: kiroFallbackURL, AmzTarget: kiroFallbackTarget},
+	{Name: "amazonq", URL: kiroPrimaryURL},
 }
 
 type runtimeClient struct {
@@ -91,6 +91,10 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 }
 
 func (s *Service) CompleteWithCallback(ctx context.Context, req provider.ChatRequest, eventCallback func(StreamEvent)) (provider.CompletionOutcome, int, string, error) {
+	return s.completePrepared(ctx, req, eventCallback)
+}
+
+func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest, eventCallback func(StreamEvent)) (provider.CompletionOutcome, int, string, error) {
 	requestID := platform.RequestIDFromContext(ctx)
 	if strings.TrimSpace(req.Model) == "" {
 		s.recordRequestFailure()
@@ -474,8 +478,8 @@ func applyRuntimeHeaders(req *http.Request, account config.Account, endpoint end
 		req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
 	} else {
 		machineID := generateMachineID()
-		req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.0.27 m/E KiroIDE-0.10.32-%s", machineID))
-		req.Header.Set("x-amz-user-agent", "aws-sdk-js/1.0.27 KiroIDE 0.10.32")
+		req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.2.15 m/E KiroIDE-0.11.107-%s", machineID))
+		req.Header.Set("x-amz-user-agent", "aws-sdk-js/1.2.15 KiroIDE 0.11.107")
 		req.Header.Set("x-amzn-kiro-agent-mode", "spec")
 	}
 
@@ -553,7 +557,6 @@ func upstreamErrorMessage(statusCode int, body []byte) string {
 	}
 	return trimmed
 }
-
 
 func maxInt(left int, right int) int {
 	if left > right {

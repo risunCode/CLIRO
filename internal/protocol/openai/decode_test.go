@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"reflect"
 	"testing"
 
 	contract "cliro-go/internal/contract"
@@ -46,5 +47,29 @@ func TestResponsesToIR_ParsesAssistantOutputAndToolResult(t *testing.T) {
 	}
 	if request.Messages[1].Role != contract.RoleTool || request.Messages[1].ToolCallID != "call_1" || request.Messages[1].Content != "done" {
 		t.Fatalf("unexpected tool result message: %+v", request.Messages[1])
+	}
+}
+
+func TestChatToIR_PreservesBuiltinToolType(t *testing.T) {
+	request, err := ChatToIR(ChatRequest{
+		Model: "gpt-5.4",
+		Messages: []Message{{Role: "user", Content: "search this"}},
+		Tools: []Tool{{Type: "web_search"}},
+		ToolChoice: map[string]any{"type": "web_search"},
+	})
+	if err != nil {
+		t.Fatalf("ChatToIR: %v", err)
+	}
+	if len(request.Tools) != 1 {
+		t.Fatalf("tool count = %d", len(request.Tools))
+	}
+	if request.Tools[0].Type != "web_search" {
+		t.Fatalf("tool type = %q", request.Tools[0].Type)
+	}
+	if request.Tools[0].Name != "" {
+		t.Fatalf("tool name = %q", request.Tools[0].Name)
+	}
+	if !reflect.DeepEqual(request.ToolChoice, map[string]any{"type": "web_search"}) {
+		t.Fatalf("tool choice = %#v", request.ToolChoice)
 	}
 }

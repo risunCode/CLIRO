@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"cliro-go/internal/account"
@@ -21,6 +22,7 @@ import (
 	"cliro-go/internal/platform"
 	providerquota "cliro-go/internal/provider/quota"
 	"cliro-go/internal/sync/cliconfig"
+	"cliro-go/internal/tray"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -37,6 +39,19 @@ type App struct {
 	proxy *gateway.Server
 	cf    *cloudflared.Manager
 	cli   *cliconfig.Service
+	tray  tray.Controller
+
+	lifecycleMu    sync.Mutex
+	quitAuthorized bool
+	shuttingDown   bool
+
+	emitEvent          func(context.Context, string, ...interface{})
+	quitApp            func(context.Context)
+	hideWindow         func(context.Context)
+	showWindow         func(context.Context)
+	showApp            func(context.Context)
+	unminimiseWindow   func(context.Context)
+	setWindowAlwaysTop func(context.Context, bool)
 }
 
 type State struct {
@@ -54,6 +69,8 @@ type State struct {
 	Accounts          []config.Account        `json:"accounts"`
 	Stats             config.ProxyStats       `json:"stats"`
 	StartupWarnings   []config.StartupWarning `json:"startupWarnings,omitempty"`
+	TraySupported     bool                    `json:"traySupported"`
+	TrayAvailable     bool                    `json:"trayAvailable"`
 }
 
 type SecondLaunchNotice struct {
@@ -64,7 +81,16 @@ type SecondLaunchNotice struct {
 }
 
 func NewApp() *App {
-	return &App{}
+	return &App{
+		tray:               tray.NewController(),
+		emitEvent:          wruntime.EventsEmit,
+		quitApp:            wruntime.Quit,
+		hideWindow:         wruntime.WindowHide,
+		showWindow:         wruntime.WindowShow,
+		showApp:            wruntime.Show,
+		unminimiseWindow:   wruntime.WindowUnminimise,
+		setWindowAlwaysTop: wruntime.WindowSetAlwaysOnTop,
+	}
 }
 
 func resolveDataDir() (string, error) {
@@ -128,10 +154,20 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		a.log.Info("app", "proxy auto-start disabled by configuration")
 	}
+	a.initTray(ctx)
+	a.syncTrayProxyState()
 	a.log.Info("app", "CLIro-Go backend initialized")
 }
 
 func (a *App) shutdown(_ context.Context) {
+	a.lifecycleMu.Lock()
+	a.shuttingDown = true
+	a.lifecycleMu.Unlock()
+	if a.tray != nil {
+		if err := a.tray.Close(); err != nil && a.log != nil {
+			a.log.Warn("tray", "failed to close system tray: "+err.Error())
+		}
+	}
 	if a.proxy != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -148,8 +184,9 @@ func (a *App) shutdown(_ context.Context) {
 }
 
 func (a *App) GetState() State {
+	traySupported, trayAvailable := a.trayState()
 	if a.store == nil {
-		return State{}
+		return State{TraySupported: traySupported, TrayAvailable: trayAvailable}
 	}
 	snap := a.store.Snapshot()
 	port := a.store.ProxyPort()
@@ -176,6 +213,8 @@ func (a *App) GetState() State {
 		Accounts:          accounts,
 		Stats:             snap.Stats,
 		StartupWarnings:   a.store.StartupWarnings(),
+		TraySupported:     traySupported,
+		TrayAvailable:     trayAvailable,
 	}
 }
 
@@ -641,6 +680,7 @@ func (a *App) StopCloudflared() error {
 }
 
 func (a *App) StartProxy() error {
+	defer a.syncTrayProxyState()
 	a.log.Info("proxy", "starting proxy service")
 	if err := a.proxy.Start(a.store.ProxyPort(), a.store.AllowLAN()); err != nil {
 		return err
@@ -652,6 +692,7 @@ func (a *App) StartProxy() error {
 }
 
 func (a *App) StopProxy() error {
+	defer a.syncTrayProxyState()
 	a.log.Info("proxy", "stopping proxy service")
 	if err := a.stopCloudflaredRuntime(); err != nil {
 		a.log.Warn("cloudflared", "cloudflared did not stop with proxy: "+err.Error())
@@ -662,6 +703,7 @@ func (a *App) StopProxy() error {
 }
 
 func (a *App) SetProxyPort(port int) error {
+	defer a.syncTrayProxyState()
 	if a.store == nil {
 		return fmt.Errorf("store is not ready")
 	}
@@ -697,6 +739,7 @@ func (a *App) SetProxyPort(port int) error {
 }
 
 func (a *App) SetAllowLAN(enabled bool) error {
+	defer a.syncTrayProxyState()
 	if a.store == nil {
 		return fmt.Errorf("store is not ready")
 	}
@@ -739,6 +782,22 @@ func (a *App) SetAutoStartProxy(enabled bool) error {
 		return err
 	}
 	a.log.Info("proxy", fmt.Sprintf("proxy autoStartProxy updated to %t", enabled))
+	return nil
+}
+
+func (a *App) ToggleProxyFromTray() error {
+	if a.proxy == nil {
+		return fmt.Errorf("proxy service is not ready")
+	}
+	if err := toggleProxyByState(a.proxy.Running(), a.StartProxy, a.StopProxy); err != nil {
+		return err
+	}
+	running := a.proxy.Running()
+	a.syncTrayProxyState()
+	a.emit("app:proxy-state-changed", map[string]any{
+		"source":  "tray",
+		"running": running,
+	})
 	return nil
 }
 
@@ -840,6 +899,151 @@ func (a *App) OpenDataDir() error {
 		return err
 	}
 	return nil
+}
+
+func (a *App) beforeCloseGuard(ctx context.Context) bool {
+	if a.ctx == nil && ctx != nil {
+		a.ctx = ctx
+	}
+	if a.consumeQuitAuthorization() {
+		return false
+	}
+	a.emit("app:close-requested")
+	return true
+}
+
+func (a *App) ConfirmQuit() error {
+	return a.requestQuit()
+}
+
+func (a *App) HideToTray() {
+	if a.ctx == nil {
+		return
+	}
+	if a.hideWindow != nil {
+		a.hideWindow(a.ctx)
+	}
+}
+
+func (a *App) RestoreWindow() {
+	a.bringWindowToFront()
+	a.emit("app:window-restored")
+}
+
+func (a *App) ExitFromTray() error {
+	return a.requestQuit()
+}
+
+func (a *App) requestQuit() error {
+	if a.ctx == nil {
+		return fmt.Errorf("application context is not ready")
+	}
+	a.authorizeQuitOnce()
+	if a.quitApp != nil {
+		a.quitApp(a.ctx)
+	}
+	return nil
+}
+
+func (a *App) authorizeQuitOnce() {
+	a.lifecycleMu.Lock()
+	a.quitAuthorized = true
+	a.lifecycleMu.Unlock()
+}
+
+func (a *App) consumeQuitAuthorization() bool {
+	a.lifecycleMu.Lock()
+	defer a.lifecycleMu.Unlock()
+	if a.quitAuthorized {
+		a.quitAuthorized = false
+		return true
+	}
+	return false
+}
+
+func (a *App) bringWindowToFront() {
+	if a.ctx == nil {
+		return
+	}
+	if a.unminimiseWindow != nil {
+		a.unminimiseWindow(a.ctx)
+	}
+	if a.showWindow != nil {
+		a.showWindow(a.ctx)
+	}
+	if a.showApp != nil {
+		a.showApp(a.ctx)
+	}
+	if a.setWindowAlwaysTop != nil {
+		a.setWindowAlwaysTop(a.ctx, true)
+		go func(ctx context.Context, setAlwaysTop func(context.Context, bool)) {
+			time.Sleep(250 * time.Millisecond)
+			setAlwaysTop(ctx, false)
+		}(a.ctx, a.setWindowAlwaysTop)
+	}
+}
+
+func (a *App) emit(name string, data ...interface{}) {
+	if a.ctx == nil || a.emitEvent == nil {
+		return
+	}
+	a.emitEvent(a.ctx, name, data...)
+}
+
+func (a *App) trayState() (supported bool, available bool) {
+	if a.tray == nil {
+		return false, false
+	}
+	return a.tray.Supported(), a.tray.Available()
+}
+
+func (a *App) initTray(ctx context.Context) {
+	if a.tray == nil {
+		a.tray = tray.NewController()
+	}
+	if a.tray == nil || !a.tray.Supported() {
+		return
+	}
+	err := a.tray.Start(ctx, tray.MenuCallbacks{
+		OnReady: func() {
+			a.syncTrayProxyState()
+			supported, available := a.trayState()
+			a.emit("app:tray-state-changed", map[string]any{
+				"source":    "tray",
+				"supported": supported,
+				"available": available,
+			})
+		},
+		OnOpen: func() {
+			a.RestoreWindow()
+		},
+		OnToggleProxy: func() error {
+			return a.ToggleProxyFromTray()
+		},
+		OnExit: func() {
+			_ = a.ExitFromTray()
+		},
+		IsProxyRunning: func() bool {
+			return a.proxy != nil && a.proxy.Running()
+		},
+	})
+	if err != nil && a.log != nil {
+		a.log.Warn("tray", "failed to initialize system tray: "+err.Error())
+	}
+}
+
+func (a *App) syncTrayProxyState() {
+	if a.tray == nil {
+		return
+	}
+	a.tray.SetProxyRunning(a.proxy != nil && a.proxy.Running())
+}
+
+func toggleProxyByState(running bool, startFn func() error, stopFn func() error) error {
+	if running {
+		return stopFn()
+	}
+	return startFn()
 }
 
 func buildSecondLaunchNotice(data options.SecondInstanceData) SecondLaunchNotice {
@@ -985,13 +1189,6 @@ func (a *App) onSecondInstanceLaunch(data options.SecondInstanceData) {
 		a.log.Info("app", "no kiro:// protocol URL found in args")
 	}
 
-	wruntime.WindowUnminimise(a.ctx)
-	wruntime.WindowShow(a.ctx)
-	wruntime.Show(a.ctx)
-	wruntime.WindowSetAlwaysOnTop(a.ctx, true)
-	go func(ctx context.Context) {
-		time.Sleep(250 * time.Millisecond)
-		wruntime.WindowSetAlwaysOnTop(ctx, false)
-	}(a.ctx)
+	a.bringWindowToFront()
 	wruntime.EventsEmit(a.ctx, "app:second-instance", notice)
 }

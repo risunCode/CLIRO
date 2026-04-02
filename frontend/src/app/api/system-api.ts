@@ -1,4 +1,4 @@
-import { GetHostName, GetState, OpenDataDir, OpenExternalURL } from '@/shared/api/wails/client'
+import { ConfirmQuit, GetHostName, GetState, HideToTray, OpenDataDir, OpenExternalURL, RestoreWindow } from '@/shared/api/wails/client'
 import type { AppState, UpdateInfo } from '@/app/types'
 
 export const systemApi = {
@@ -6,5 +6,8 @@ export const systemApi = {
   getUpdateInfo: async (): Promise<UpdateInfo | null> => null,
   getHostName: async (): Promise<string> => String(await GetHostName()),
   openExternalURL: (url: string): Promise<void> => OpenExternalURL(url),
-  openDataDir: (): Promise<void> => OpenDataDir()
+  openDataDir: (): Promise<void> => OpenDataDir(),
+  confirmQuit: (): Promise<void> => ConfirmQuit(),
+  hideToTray: (): Promise<void> => HideToTray(),
+  restoreWindow: (): Promise<void> => RestoreWindow()
 }

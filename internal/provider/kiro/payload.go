@@ -135,8 +135,9 @@ func buildRequestPayload(req provider.ChatRequest, account config.Account, think
 	}
 
 	if history := buildHistory(req.Model, historyMessages); len(history) > 0 {
-		payload.ConversationState.History = history
+		payload.ConversationState.History = sanitizeHistoryToolResults(history)
 	}
+	sanitizeCurrentToolResults(&payload.ConversationState.CurrentMessage, payload.ConversationState.History)
 	if continuationID := resolveContinuationID(req.Metadata); continuationID != "" {
 		payload.ConversationState.AgentContinuationID = continuationID
 	}
@@ -314,8 +315,8 @@ func buildToolSpecifications(tools []provider.Tool) []toolSpecification {
 	builtinTools := map[string]bool{
 		"web_search":     true,
 		"code_execution": true,
-		"text_editor": true,
-		"computer":   true,
+		"text_editor":    true,
+		"computer":       true,
 	}
 
 	result := make([]toolSpecification, 0, len(tools))

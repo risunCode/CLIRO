@@ -53,6 +53,27 @@ func TestMessagesToIR_MergesMessagesAndPreservesThinkingBlocks(t *testing.T) {
 	}
 }
 
+func TestMessagesToIR_PreservesBuiltinToolType(t *testing.T) {
+	request, err := MessagesToIR(MessagesRequest{
+		Model: "claude-sonnet-4.5",
+		Messages: []Message{{Role: "user", Content: "search this"}},
+		Tools: []Tool{{Type: "web_search"}},
+		ToolChoice: map[string]any{"type": "web_search"},
+	})
+	if err != nil {
+		t.Fatalf("MessagesToIR: %v", err)
+	}
+	if len(request.Tools) != 1 {
+		t.Fatalf("tool count = %d", len(request.Tools))
+	}
+	if request.Tools[0].Type != "web_search" {
+		t.Fatalf("tool type = %q", request.Tools[0].Type)
+	}
+	if request.Tools[0].Name != "web_search" {
+		t.Fatalf("tool name = %q", request.Tools[0].Name)
+	}
+}
+
 func TestParseThinkingConfig_ConvertsOpenAIReasoningEffortToAnthropicBudgetTokens(t *testing.T) {
 	tests := []struct {
 		name          string
