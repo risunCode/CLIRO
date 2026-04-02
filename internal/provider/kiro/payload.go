@@ -310,10 +310,26 @@ func filterToolResultsByKnownIDs(results []toolResult, validIDs map[string]struc
 }
 
 func buildToolSpecifications(tools []provider.Tool) []toolSpecification {
+	// Built-in tools that Kiro doesn't support
+	builtinTools := map[string]bool{
+		"web_search":     true,
+		"code_execution": true,
+		"text_editor": true,
+		"computer":   true,
+	}
+
 	result := make([]toolSpecification, 0, len(tools))
 	for _, tool := range tools {
 		name := strings.TrimSpace(tool.Function.Name)
 		if name == "" {
+			continue
+		}
+		// Skip built-in tools (those with non-"function" type or in builtin list)
+		toolType := strings.TrimSpace(tool.Type)
+		if toolType != "" && toolType != "function" {
+			continue
+		}
+		if builtinTools[name] {
 			continue
 		}
 		result = append(result, toolSpecification{

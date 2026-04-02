@@ -672,7 +672,22 @@ func estimatePromptTokens(req provider.ChatRequest) int {
 			parts = append(parts, toolCallID)
 		}
 	}
+	// Built-in tools that Kiro doesn't support
+	builtinTools := map[string]bool{
+		"web_search":     true,
+		"code_execution": true,
+		"text_editor": true,
+		"computer":   true,
+	}
 	for _, tool := range req.Tools {
+		// Skip built-in tools for token estimation
+		toolType := strings.TrimSpace(tool.Type)
+		if toolType != "" && toolType != "function" {
+			continue
+		}
+		if builtinTools[strings.TrimSpace(tool.Function.Name)] {
+			continue
+		}
 		parts = append(parts, strings.TrimSpace(tool.Function.Name), strings.TrimSpace(tool.Function.Description), marshalAny(tool.Function.Parameters))
 	}
 	if user := strings.TrimSpace(req.User); user != "" {
