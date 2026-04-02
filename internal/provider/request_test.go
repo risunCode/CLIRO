@@ -109,8 +109,8 @@ func TestRequestFromIRLeavesThinkingAbsentWhenNotProvided(t *testing.T) {
 
 	got := RequestFromIR(request)
 
-	if got.Thinking != (contract.ThinkingConfig{}) {
-		t.Fatalf("Thinking = %#v", got.Thinking)
+	if got.Thinking.Requested {
+		t.Fatalf("Thinking.Requested should be false")
 	}
 	if len(got.Messages) != 1 {
 		t.Fatalf("Messages len = %d", len(got.Messages))

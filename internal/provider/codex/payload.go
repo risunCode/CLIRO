@@ -29,6 +29,24 @@ func (s *Service) buildRequestPayload(req provider.ChatRequest) (map[string]any,
 		"include":             []string{"reasoning.encrypted_content"},
 		"parallel_tool_calls": true,
 	}
+	if req.Thinking.Requested && len(req.Thinking.RawParams) > 0 {
+		params := make(map[string]any)
+		for k, v := range req.Thinking.RawParams {
+			if k == "budget_tokens" {
+				if effort := budgetTokensToEffort(v); effort != "" {
+					params["effort"] = effort
+				}
+			} else if k == "effort" {
+				params[k] = v
+			}
+		}
+		if len(params) > 0 {
+			if _, hasSummary := params["summary"]; !hasSummary {
+				params["summary"] = "auto"
+			}
+			payload["reasoning"] = params
+		}
+	}
 	if req.Metadata != nil {
 		if previousResponseID, ok := req.Metadata["previousResponseID"].(string); ok && strings.TrimSpace(previousResponseID) != "" {
 			payload["previous_response_id"] = strings.TrimSpace(previousResponseID)
@@ -133,3 +151,26 @@ func messageToText(content any) string {
 	}
 }
 
+func budgetTokensToEffort(budgetTokens any) string {
+	var tokens int
+	switch v := budgetTokens.(type) {
+	case int:
+		tokens = v
+	case float64:
+		tokens = int(v)
+	default:
+		return ""
+	}
+
+	if tokens <= 0 {
+		return ""
+	} else if tokens <= 6000 {
+		return "low"
+	} else if tokens <= 12000 {
+		return "medium"
+	} else if tokens <= 24000 {
+		return "high"
+	} else {
+		return "xhigh"
+	}
+}

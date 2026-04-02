@@ -70,6 +70,30 @@ const executeEndpointTest = async ({ baseUrl, apiKey, endpointId, body = '' }: E
   try {
     const response = await fetch(target, options)
     const contentType = response.headers.get('content-type') || ''
+    
+    // Handle SSE streaming
+  if (contentType.includes('text/event-stream')) {
+      const reader = response.body?.getReader()
+      if (!reader) {
+     throw new Error('Response body is not readable')
+      }
+
+      const decoder = new TextDecoder()
+      let responseText = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+    responseText += decoder.decode(value, { stream: true })
+      }
+
+      return {
+        status: `${response.status} ${response.statusText}`,
+        responseText
+}
+    }
+
+ // Handle JSON response
     const responseText = contentType.includes('application/json')
       ? JSON.stringify(await response.json(), null, 2)
       : await response.text()

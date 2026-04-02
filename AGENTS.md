@@ -25,6 +25,16 @@ CLIro-Go currently focuses on:
 
 - `GET /v1/models` exposes canonical model IDs only (no published `-thinking` aliases).
 - Requests with `-thinking` suffix are still normalized during model resolution for compatibility.
+- **Model effort suffixes** enable automatic reasoning parameter injection:
+  - `-low` / `-minimal` → 4096 budget tokens (OpenAI: `effort: "low"`)
+  - `-medium` → 10000 budget tokens (OpenAI: `effort: "medium"`)
+  - `-high` → 16384 budget tokens (OpenAI: `effort: "high"`)
+  - `-xhigh` → 32768 budget tokens (OpenAI: `effort: "xhigh"`)
+- Example: `gpt-5.4-high` auto-injects `reasoning: {effort: "high"}` for Codex, `thinking: {budget_tokens: 16384}` for Anthropic
+- **Cross-protocol reasoning/thinking conversion**:
+  - OpenAI `reasoning.effort` ↔ Anthropic `thinking.budget_tokens` bidirectional mapping
+  - Automatic parameter filtering to prevent "Unknown parameter" errors
+  - Response format: `reasoning_content` field in OpenAI endpoints, thinking blocks in Anthropic endpoints
 - Kiro runtime endpoints remain fixed to `q.us-east-1.amazonaws.com` and `codewhisperer.us-east-1.amazonaws.com`.
 - Authorization mode (when enabled) requires the configured proxy API key on all proxy routes.
 - Smart quota refresh skips accounts that are disabled/banned/not-yet-reset exhausted; force refresh bypasses smart skip.

@@ -315,7 +315,7 @@ func (s *Server) streamOpenAIResponses(w http.ResponseWriter, requestedModel str
 			"type":    "message",
 			"role":    "assistant",
 			"status":  "in_progress",
-			"content": []any{openAIResponsesOutputTextContent("", "")},
+			"content": []any{map[string]any{"type": "output_text", "text": "", "annotations": []any{}}},
 		},
 	})
 	flusher.Flush()
@@ -354,11 +354,16 @@ func (s *Server) streamOpenAIResponses(w http.ResponseWriter, requestedModel str
 		"type":         "response.output_item.done",
 		"output_index": 0,
 		"item": map[string]any{
-			"id":      itemID,
-			"type":    "message",
-			"role":    "assistant",
-			"status":  "completed",
-			"content": []any{openAIResponsesOutputTextContent(response.Text, response.Thinking)},
+			"id":     itemID,
+			"type":   "message",
+			"role":   "assistant",
+			"status": "completed",
+			"content": []any{map[string]any{
+				"type":              "output_text",
+				"text":              response.Text,
+				"reasoning_content": response.Thinking,
+				"annotations":       []any{},
+			}},
 		},
 	})
 	writeOpenAIResponsesSSEEvent(w, "response.completed", map[string]any{
@@ -441,18 +446,6 @@ func (s *Server) streamOpenAICompletions(w http.ResponseWriter, requestedModel s
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", encoded)
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	flusher.Flush()
-}
-
-func openAIResponsesOutputTextContent(text string, reasoning string) map[string]any {
-	content := map[string]any{
-		"type":        "output_text",
-		"text":        text,
-		"annotations": []any{},
-	}
-	if reasoning != "" {
-		content["reasoning_content"] = reasoning
-	}
-	return content
 }
 
 type streamToolCall struct {

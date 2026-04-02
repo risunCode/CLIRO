@@ -158,7 +158,7 @@
       </div>
 
       <div class="usage-log-list no-scrollbar">
-        {#each recentRequests as request (`${request.timestamp}-${request.provider}-${request.model}`)}
+        {#each recentRequests as request (request.requestId || `${request.timestamp}-${request.provider}-${request.model}`)}
           <div class="usage-log-row">
             <div class="usage-log-model">
               <p>{request.model}</p>
@@ -213,16 +213,16 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.75rem 0.85rem;
+    padding: 0.62rem 0.75rem;
     border-bottom: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
   }
 
   .usage-flow-map {
     position: relative;
-    min-height: 340px;
+    min-height: 262px;
     overflow: hidden;
     background:
-      radial-gradient(circle at center, rgba(255, 255, 255, 0.03), transparent 48%),
+      radial-gradient(circle at center, rgba(255, 255, 255, 0.025), transparent 48%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0.005));
   }
 
@@ -236,16 +236,17 @@
   .usage-flow-line {
     fill: none;
     stroke: color-mix(in srgb, var(--color-border) 60%, transparent);
-    stroke-width: 2.2;
+    stroke-width: 3;
     stroke-linecap: round;
-    stroke-dasharray: 2 8;
-    opacity: 0.6;
+    stroke-linejoin: round;
+    stroke-dasharray: 11 15;
+    opacity: 0.68;
   }
 
   .usage-flow-line.is-active {
     stroke: color-mix(in srgb, var(--accent-primary) 75%, #f8fafc);
     opacity: 1;
-    animation: usage-flow-dash 0.9s linear infinite;
+    animation: usage-flow-dash 1.2s linear infinite;
   }
 
   .usage-provider-node,
@@ -253,22 +254,22 @@
     position: absolute;
     display: flex;
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.52rem;
     border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-    border-radius: 12px;
+    border-radius: 11px;
     background: color-mix(in srgb, var(--color-surface) 92%, rgba(255, 255, 255, 0.04));
-    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
-    padding: 0.62rem 0.72rem;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    padding: 0.5rem 0.58rem;
   }
 
   .usage-provider-node-left {
-    left: 6%;
+    left: 5.5%;
     top: 50%;
     transform: translateY(-50%);
   }
 
   .usage-provider-node-right {
-    right: 6%;
+    right: 5.5%;
     top: 50%;
     transform: translateY(-50%);
   }
@@ -276,20 +277,20 @@
   .usage-center-node {
     left: 50%;
     top: 50%;
-    width: 148px;
+    width: 132px;
     flex-direction: column;
     justify-content: center;
-    gap: 0.42rem;
+    gap: 0.34rem;
     text-align: center;
     transform: translate(-50%, -50%);
-    padding: 0.82rem 0.72rem;
+    padding: 0.68rem 0.62rem;
     background: color-mix(in srgb, var(--color-surface) 88%, rgba(255, 255, 255, 0.05));
   }
 
   .usage-center-ring {
     position: absolute;
-    inset: -18px;
-    border: 1px dashed color-mix(in srgb, var(--accent-primary) 32%, transparent);
+    inset: -15px;
+    border: 1.5px dashed color-mix(in srgb, var(--accent-primary) 34%, transparent);
     border-radius: 999px;
     opacity: 0.6;
   }
@@ -298,31 +299,31 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    border-radius: 10px;
+    width: 31px;
+    height: 31px;
+    min-width: 31px;
+    border-radius: 9px;
     border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
     background: color-mix(in srgb, var(--color-bg) 88%, transparent);
   }
 
   .usage-center-icon-shell {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
     z-index: 1;
   }
 
   .usage-provider-icon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     object-fit: contain;
   }
 
   .usage-node-title,
   .usage-center-title {
     margin: 0;
-    font-size: 0.84rem;
+    font-size: 0.77rem;
     font-weight: 700;
     color: var(--color-text-primary);
   }
@@ -331,7 +332,7 @@
   .usage-center-meta,
   .usage-node-meta {
     margin: 0.12rem 0 0;
-    font-size: 0.67rem;
+    font-size: 0.61rem;
     color: var(--color-text-secondary);
   }
 
@@ -403,13 +404,13 @@
     }
 
     to {
-      stroke-dashoffset: -24;
+      stroke-dashoffset: -52;
     }
   }
 
   @media (max-width: 1024px) {
     .usage-flow-map {
-      min-height: 300px;
+      min-height: 236px;
     }
 
     .usage-provider-node-left {
@@ -435,7 +436,7 @@
     }
 
     .usage-flow-map {
-      min-height: 430px;
+      min-height: 360px;
     }
 
     .usage-provider-node-left,

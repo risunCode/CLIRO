@@ -53,6 +53,7 @@ func MessagesToIR(req MessagesRequest) (contract.Request, error) {
 		Protocol:    contract.ProtocolAnthropic,
 		Endpoint:    contract.EndpointAnthropicMessages,
 		Model:       model,
+		Thinking:    parseThinkingConfig(req.Thinking),
 		Messages:    messages,
 		Stream:      req.Stream,
 		Temperature: req.Temperature,
@@ -383,3 +384,43 @@ func stripAnthropicCacheControl(value any) any {
 	}
 }
 
+func parseThinkingConfig(thinking map[string]any) contract.ThinkingConfig {
+	if len(thinking) == 0 {
+		return contract.ThinkingConfig{}
+	}
+	filtered := make(map[string]any)
+	for k, v := range thinking {
+		switch k {
+		case "budget_tokens":
+			filtered[k] = v
+		case "effort":
+			if budgetTokens := effortToBudgetTokens(v); budgetTokens > 0 {
+				filtered["budget_tokens"] = budgetTokens
+			}
+		}
+	}
+	return contract.ThinkingConfig{
+		Requested: true,
+		Mode:      contract.ThinkingModeAuto,
+		RawParams: filtered,
+	}
+}
+
+func effortToBudgetTokens(effort any) int {
+	effortStr, ok := effort.(string)
+	if !ok {
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(effortStr)) {
+	case "low", "minimal":
+		return 4096
+	case "medium":
+		return 10000
+	case "high":
+		return 16384
+	case "xhigh":
+		return 32768
+	default:
+		return 0
+	}
+}

@@ -24,6 +24,9 @@ func (s *Server) prepareExecutionRequest(request contract.Request) (contract.Req
 	}
 
 	request.Thinking.Requested = request.Thinking.Requested || resolution.ThinkingRequested
+	if resolution.ThinkingEffort != "" && len(request.Thinking.RawParams) == 0 {
+		request.Thinking.RawParams = map[string]any{"effort": resolution.ThinkingEffort}
+	}
 	request.Model = resolution.ResolvedModel
 
 	if err := route.ValidateEndpointProvider(string(request.Endpoint), resolution.Provider); err != nil {

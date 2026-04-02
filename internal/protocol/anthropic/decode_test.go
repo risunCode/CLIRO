@@ -52,3 +52,37 @@ func TestMessagesToIR_MergesMessagesAndPreservesThinkingBlocks(t *testing.T) {
 		t.Fatalf("user content = %#v", user.Content)
 	}
 }
+
+func TestParseThinkingConfig_ConvertsOpenAIReasoningEffortToAnthropicBudgetTokens(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         map[string]any
+		wantRequested bool
+		wantBudget    int
+	}{
+		{name: "empty", input: map[string]any{}, wantRequested: false, wantBudget: 0},
+		{name: "effort_low", input: map[string]any{"effort": "low"}, wantRequested: true, wantBudget: 4096},
+		{name: "effort_medium", input: map[string]any{"effort": "medium"}, wantRequested: true, wantBudget: 10000},
+		{name: "effort_high", input: map[string]any{"effort": "high"}, wantRequested: true, wantBudget: 16384},
+		{name: "effort_xhigh", input: map[string]any{"effort": "xhigh"}, wantRequested: true, wantBudget: 32768},
+		{name: "effort_minimal", input: map[string]any{"effort": "minimal"}, wantRequested: true, wantBudget: 4096},
+		{name: "budget_tokens_preserved", input: map[string]any{"budget_tokens": 8192}, wantRequested: true, wantBudget: 8192},
+		{name: "type_preserved", input: map[string]any{"type": "enabled"}, wantRequested: true, wantBudget: 0},
+		{name: "unknown_param_filtered", input: map[string]any{"unknown": "value"}, wantRequested: true, wantBudget: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := parseThinkingConfig(tt.input)
+			if config.Requested != tt.wantRequested {
+				t.Errorf("Requested = %v, want %v", config.Requested, tt.wantRequested)
+			}
+			if tt.wantBudget > 0 {
+				budget, ok := config.RawParams["budget_tokens"].(int)
+				if !ok || budget != tt.wantBudget {
+					t.Errorf("budget_tokens = %v, want %d", config.RawParams["budget_tokens"], tt.wantBudget)
+				}
+			}
+		})
+	}
+}

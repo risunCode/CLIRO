@@ -57,6 +57,19 @@ func toNormalizedMessages(messages []provider.Message) []normalizedMessage {
 		toolResults := extractToolResults(message)
 		text := sanitizePromptText(messageTextContent(message.Content))
 
+		// Append thinking blocks to text content
+		if len(message.ThinkingBlocks) > 0 {
+			thinkingParts := make([]string, 0, len(message.ThinkingBlocks))
+			for _, block := range message.ThinkingBlocks {
+				if thinking := strings.TrimSpace(block.Thinking); thinking != "" {
+					thinkingParts = append(thinkingParts, thinking)
+				}
+			}
+			if len(thinkingParts) > 0 {
+				text = joinNonEmpty(strings.Join(thinkingParts, "\n\n"), text)
+			}
+		}
+
 		switch role {
 		case "tool":
 			role = "user"

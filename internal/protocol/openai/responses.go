@@ -16,10 +16,11 @@ type ChatChoice struct {
 }
 
 type ChatMessage struct {
-	Role             string `json:"role"`
-	Content          any    `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
-	ToolCalls        any    `json:"tool_calls,omitempty"`
+	Role             string         `json:"role"`
+	Content          any            `json:"content"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	ToolCalls        any            `json:"tool_calls,omitempty"`
+	AdditionalKwargs map[string]any `json:"additional_kwargs,omitempty"`
 }
 
 type CompletionsResponse struct {

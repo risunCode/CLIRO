@@ -20,6 +20,7 @@ type requestPayload struct {
 	ConversationState conversationState `json:"conversationState"`
 	ProfileARN        string            `json:"profileArn,omitempty"`
 	InferenceConfig   *inferenceConfig  `json:"inferenceConfig,omitempty"`
+	ThinkingBudget    *int              `json:"thinking_budget,omitempty"`
 }
 
 type conversationState struct {
@@ -144,6 +145,9 @@ func buildRequestPayload(req provider.ChatRequest, account config.Account, think
 	}
 	if config := buildInferenceConfig(req); config != nil {
 		payload.InferenceConfig = config
+	}
+	if thinkingBudget := extractThinkingBudget(req); thinkingBudget > 0 {
+		payload.ThinkingBudget = &thinkingBudget
 	}
 
 	return payload, nil
@@ -447,4 +451,20 @@ func buildForcedThinkingPrompt(maxTokens int) string {
 		maxTokens = 4000
 	}
 	return forcedThinkingModeTag + "\n<max_thinking_length>" + fmt.Sprintf("%d", maxTokens) + "</max_thinking_length>"
+}
+
+func extractThinkingBudget(req provider.ChatRequest) int {
+	if !req.Thinking.Requested || len(req.Thinking.RawParams) == 0 {
+		return 0
+	}
+	// Try Anthropic format first (thinking.budget_tokens)
+	if budgetTokens, ok := req.Thinking.RawParams["budget_tokens"].(float64); ok {
+		return int(budgetTokens)
+	}
+	if budgetTokens, ok := req.Thinking.RawParams["budget_tokens"].(int); ok {
+		return budgetTokens
+	}
+	// Try OpenAI format (reasoning.effort) - not supported by Kiro, return 0
+	// Kiro API doesn't support reasoning effort levels
+	return 0
 }

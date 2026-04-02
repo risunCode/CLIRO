@@ -92,7 +92,9 @@ func looksLikeKiroPassthrough(model string) bool {
 	return normalized == "auto" ||
 		strings.HasPrefix(normalized, "claude-") ||
 		strings.HasPrefix(normalized, "kiro-") ||
-		strings.HasPrefix(normalized, "amazonq-")
+		strings.HasPrefix(normalized, "amazonq-") ||
+		strings.HasPrefix(normalized, "minimax-") ||
+		strings.HasPrefix(normalized, "qwen")
 }
 
 func looksLikeKiroInternalModel(model string) bool {

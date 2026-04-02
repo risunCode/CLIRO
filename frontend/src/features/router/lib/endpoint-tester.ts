@@ -28,8 +28,9 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
     defaultBody: JSON.stringify(
       {
         model: 'gpt-5.3-codex',
+ reasoning: { effort: 'medium' },
         input: 'Say hello from CLIro responses API.',
-        stream: false
+        stream: true
       },
       null,
       2
@@ -43,15 +44,16 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
     defaultBody: JSON.stringify(
       {
         model: 'gpt-5.3-codex',
+     reasoning: { effort: 'medium' },
         messages: [{ role: 'user', content: 'Say hello from CLIro.' }],
-        stream: false
+        stream: true
       },
       null,
       2
     )
   },
-  {
-    id: 'completions',
+    {
+ id: 'completions',
     label: 'POST /v1/completions (OpenAI/compatible)',
     method: 'POST',
     path: '/v1/completions',
@@ -59,7 +61,7 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
       {
         model: 'gpt-5.3-codex',
         prompt: 'Write one sentence about local proxy routing.',
-        stream: false
+      stream: true
       },
       null,
       2
@@ -73,8 +75,9 @@ export const ENDPOINT_PRESETS: EndpointPreset[] = [
     defaultBody: JSON.stringify(
       {
         model: 'claude-haiku-4.5',
+        thinking: { type: 'enabled', budget_tokens: 2000 },
         max_tokens: 256,
-        stream: false,
+        stream: true,
         messages: [{ role: 'user', content: 'Say hello from CLIro Anthropic-compatible endpoint.' }]
       },
       null,

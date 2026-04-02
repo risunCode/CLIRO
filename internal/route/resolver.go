@@ -19,6 +19,7 @@ type ModelResolution struct {
 	RequestedModel    string
 	ResolvedModel     string
 	ThinkingRequested bool
+	ThinkingEffort    string
 }
 
 type ModelDefinition struct {
@@ -35,6 +36,7 @@ func ResolveModel(model string, thinkingSuffix string, aliases map[string]string
 	}
 
 	resolvedBase, thinkingRequested := splitThinkingSuffix(requested, thinkingSuffix)
+	resolvedBase, effortSuffix := splitEffortSuffix(resolvedBase)
 
 	// Check alias first
 	if aliasTarget, ok := aliases[resolvedBase]; ok && strings.TrimSpace(aliasTarget) != "" {
@@ -46,7 +48,8 @@ func ResolveModel(model string, thinkingSuffix string, aliases map[string]string
 			Provider:          ProviderCodex,
 			RequestedModel:    requested,
 			ResolvedModel:     resolvedModel,
-			ThinkingRequested: thinkingRequested,
+			ThinkingRequested: thinkingRequested || effortSuffix != "",
+			ThinkingEffort:    effortSuffix,
 		}, nil
 	}
 
@@ -55,7 +58,8 @@ func ResolveModel(model string, thinkingSuffix string, aliases map[string]string
 			Provider:          ProviderKiro,
 			RequestedModel:    requested,
 			ResolvedModel:     resolvedModel,
-			ThinkingRequested: thinkingRequested,
+			ThinkingRequested: thinkingRequested || effortSuffix != "",
+			ThinkingEffort:    effortSuffix,
 		}, nil
 	}
 
@@ -83,6 +87,26 @@ func splitThinkingSuffix(model string, suffix string) (string, bool) {
 	}
 
 	return trimmed, false
+}
+
+func splitEffortSuffix(model string) (string, string) {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return "", ""
+	}
+
+	lowerModel := strings.ToLower(trimmed)
+	efforts := []string{"-xhigh", "-high", "-medium", "-low", "-minimal"}
+	for _, effort := range efforts {
+		if strings.HasSuffix(lowerModel, effort) {
+			base := strings.TrimSpace(trimmed[:len(trimmed)-len(effort)])
+			if base != "" {
+				return base, strings.TrimPrefix(effort, "-")
+			}
+		}
+	}
+
+	return trimmed, ""
 }
 func CatalogModels() []ModelDefinition {
 	models := make([]ModelDefinition, 0, len(codexModelCatalog)+len(kiroModelCatalog))

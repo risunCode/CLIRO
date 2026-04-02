@@ -15,6 +15,13 @@ func IRToChat(resp contract.Response) ChatResponse {
 	message := ChatMessage{Role: "assistant", Content: resp.Text}
 	if resp.Thinking != "" {
 		message.ReasoningContent = resp.Thinking
+		if message.AdditionalKwargs == nil {
+			message.AdditionalKwargs = make(map[string]any)
+		}
+		message.AdditionalKwargs["thinking_blocks"] = []map[string]any{{
+			"thinking":  resp.Thinking,
+			"signature": resp.ThinkingSignature,
+		}}
 	}
 	finishReason := util.FirstNonEmpty(resp.StopReason, "stop")
 	if len(resp.ToolCalls) > 0 {
@@ -66,12 +73,20 @@ func IRToCompletions(resp contract.Response) CompletionsResponse {
 func IRToResponses(resp contract.Response) ResponsesResponse {
 	output := make([]ResponsesOutputItem, 0, 1+len(resp.ToolCalls))
 	if strings.TrimSpace(resp.Text) != "" || len(resp.ToolCalls) == 0 {
+		messageContent := ResponsesContentPart{
+			Type:        "output_text",
+			Text:        resp.Text,
+			Annotations: []any{},
+		}
+		if resp.Thinking != "" {
+			messageContent.ReasoningContent = resp.Thinking
+		}
 		output = append(output, ResponsesOutputItem{
 			ID:      resp.ID,
 			Type:    "message",
 			Role:    "assistant",
 			Status:  "completed",
-			Content: []ResponsesContentPart{responseOutputTextPart(resp.Text, resp.Thinking)},
+			Content: []ResponsesContentPart{messageContent},
 		})
 	}
 	for _, call := range resp.ToolCalls {
@@ -113,18 +128,6 @@ func IRToResponses(resp contract.Response) ResponsesResponse {
 	}
 }
 
-func responseOutputTextPart(text string, reasoning string) ResponsesContentPart {
-	part := ResponsesContentPart{
-		Type:        "output_text",
-		Text:        text,
-		Annotations: []any{},
-	}
-	if reasoning != "" {
-		part.ReasoningContent = reasoning
-	}
-	return part
-}
-
 func irToolCallsToOpenAIToolCalls(calls []contract.ToolCall) []map[string]any {
 	out := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
@@ -160,4 +163,3 @@ func irToolCallsToOpenAIToolCalls(calls []contract.ToolCall) []map[string]any {
 	}
 	return out
 }
-

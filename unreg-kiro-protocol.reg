@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+; Unregister kiro:// protocol handler
+; Double-click this file to remove CLIro-Go as the kiro:// protocol handler
+
+[-HKEY_CURRENT_USER\Software\Classes\kiro]

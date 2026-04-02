@@ -15,6 +15,7 @@ type ChatRequest struct {
 	User        string         `json:"user,omitempty"`
 	Tools       []Tool         `json:"tools,omitempty"`
 	ToolChoice  any            `json:"tool_choice,omitempty"`
+	Reasoning   map[string]any `json:"reasoning,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
@@ -69,6 +70,7 @@ type ResponsesRequest struct {
 	User               string         `json:"user,omitempty"`
 	Tools              []Tool         `json:"tools,omitempty"`
 	ToolChoice         any            `json:"tool_choice,omitempty"`
+	Reasoning          map[string]any `json:"reasoning,omitempty"`
 	PreviousResponseID string         `json:"previous_response_id,omitempty"`
 	ParallelToolCalls  *bool          `json:"parallel_tool_calls,omitempty"`
 	Store              *bool          `json:"store,omitempty"`

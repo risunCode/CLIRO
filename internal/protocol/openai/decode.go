@@ -49,6 +49,7 @@ func ResponsesToIR(req ResponsesRequest) (contract.Request, error) {
 		Protocol:    contract.ProtocolOpenAI,
 		Endpoint:    contract.EndpointOpenAIResponses,
 		Model:       req.Model,
+		Thinking:    parseThinkingConfig(req.Reasoning),
 		Messages:    messages,
 		Stream:      req.Stream,
 		Temperature: req.Temperature,
@@ -99,6 +100,7 @@ func ChatToIR(req ChatRequest) (contract.Request, error) {
 		Protocol:    contract.ProtocolOpenAI,
 		Endpoint:    contract.EndpointOpenAIChat,
 		Model:       req.Model,
+		Thinking:    parseThinkingConfig(req.Reasoning),
 		Messages:    messages,
 		Stream:      req.Stream,
 		Temperature: req.Temperature,
@@ -378,6 +380,17 @@ func validateModel(model string) error {
 		return fmt.Errorf("model is required")
 	}
 	return nil
+}
+
+func parseThinkingConfig(reasoning map[string]any) contract.ThinkingConfig {
+	if len(reasoning) == 0 {
+		return contract.ThinkingConfig{}
+	}
+	return contract.ThinkingConfig{
+		Requested: true,
+		Mode:      contract.ThinkingModeAuto,
+		RawParams: reasoning,
+	}
 }
 
 func asString(value any) string {

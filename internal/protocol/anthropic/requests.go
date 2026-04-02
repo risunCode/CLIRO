@@ -6,16 +6,17 @@ import (
 )
 
 type MessagesRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	System      any       `json:"system,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Temperature *float64  `json:"temperature,omitempty"`
-	TopP        *float64  `json:"top_p,omitempty"`
-	Stream      bool      `json:"stream,omitempty"`
-	User        string    `json:"user,omitempty"`
-	Tools       []Tool    `json:"tools,omitempty"`
-	ToolChoice  any       `json:"tool_choice,omitempty"`
+	Model       string         `json:"model"`
+	Messages    []Message      `json:"messages"`
+	System      any            `json:"system,omitempty"`
+	MaxTokens   int            `json:"max_tokens,omitempty"`
+	Temperature *float64       `json:"temperature,omitempty"`
+	TopP        *float64       `json:"top_p,omitempty"`
+	Stream      bool           `json:"stream,omitempty"`
+	User        string         `json:"user,omitempty"`
+	Tools       []Tool         `json:"tools,omitempty"`
+	ToolChoice  any            `json:"tool_choice,omitempty"`
+	Thinking    map[string]any `json:"thinking,omitempty"`
 }
 
 type Message struct {

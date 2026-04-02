@@ -38,6 +38,7 @@ const (
 type ThinkingConfig struct {
 	Requested bool
 	Mode      ThinkingMode
+	RawParams map[string]any
 }
 
 type Request struct {

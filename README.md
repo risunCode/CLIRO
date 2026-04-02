@@ -24,6 +24,16 @@ Current release: **v0.3.0**
   - `GET /v1/models`
   - `GET /health`
   - `GET /v1/stats`
+- **Automatic reasoning/thinking parameter injection** via model name suffixes:
+  - `-low` / `-minimal` → 4096 budget tokens (OpenAI: `effort: "low"`)
+  - `-medium` → 10000 budget tokens (OpenAI: `effort: "medium"`)
+  - `-high` → 16384 budget tokens (OpenAI: `effort: "high"`)
+  - `-xhigh` → 32768 budget tokens (OpenAI: `effort: "xhigh"`)
+  - Example: `gpt-5.4-high` automatically enables extended thinking
+- **Cross-protocol reasoning/thinking conversion**:
+  - OpenAI `reasoning.effort` ↔ Anthropic `thinking.budget_tokens` bidirectional mapping
+  - Automatic parameter filtering to prevent "Unknown parameter" errors
+  - Universal `reasoning_content` field in responses for client compatibility
 - Multi-account routing for Codex and Kiro with availability-aware scheduling, circuit breaker steps, and cooldown handling.
 - OAuth flows for Codex plus Kiro device auth and Kiro social auth.
 - Token refresh, quota refresh, smart batch quota refresh, and force-refresh-all quota actions.
@@ -34,6 +44,10 @@ Current release: **v0.3.0**
 ## Supported Models
 
 - All models are listed directly in `GET /v1/models`.
+- **Model name suffixes** enable automatic reasoning/thinking:
+  - Add `-low`, `-medium`, `-high`, or `-xhigh` to any model name
+  - Example: `gpt-5.4-high`, `claude-sonnet-4.5-high`
+- Suffix is stripped during routing and converted to appropriate reasoning parameters
 - Current Kiro catalog includes examples such as:
   - `claude-sonnet-4`
   - `claude-sonnet-4.5`
@@ -99,13 +113,23 @@ Default base URL:
 
 `http://localhost:8095/v1`
 
-Example:
+Example without reasoning:
 
 ```bash
 curl -X POST http://localhost:8095/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-5.3-codex","messages":[{"role":"user","content":"Hello"}]}'
 ```
+
+Example with automatic reasoning (using `-high` suffix):
+
+```bash
+curl -X POST http://localhost:8095/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.4-high","messages":[{"role":"user","content":"Explain quantum entanglement"}]}'
+```
+
+The response will include `reasoning_content` field with extended thinking.
 
 ## Notes
 
