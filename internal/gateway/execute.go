@@ -56,7 +56,8 @@ func (s *Server) executeRequest(ctx context.Context, request contract.Request) (
 		if execErr != nil {
 			return contract.Response{}, status, message, execErr
 		}
-		s.logRequestEvent("info", requestID, "provider_completed", fmt.Sprintf("route=%q", string(request.Endpoint)), fmt.Sprintf("provider=%q", util.FirstNonEmpty(strings.TrimSpace(outcome.Provider), string(resolution.Provider))), fmt.Sprintf("account=%q", strings.TrimSpace(outcome.AccountLabel)), fmt.Sprintf("model=%q", strings.TrimSpace(outcome.Model)), fmt.Sprintf("prompt_tokens=%d", outcome.Usage.PromptTokens), fmt.Sprintf("completion_tokens=%d", outcome.Usage.CompletionTokens), fmt.Sprintf("total_tokens=%d", outcome.Usage.TotalTokens))
+		resolvedModel := util.FirstNonEmpty(strings.TrimSpace(outcome.Model), strings.TrimSpace(preparedRequest.Model))
+		s.logRequestEvent("info", requestID, "provider_completed", fmt.Sprintf("route=%q", string(request.Endpoint)), fmt.Sprintf("provider=%q", util.FirstNonEmpty(strings.TrimSpace(outcome.Provider), string(resolution.Provider))), fmt.Sprintf("account=%q", strings.TrimSpace(outcome.AccountLabel)), fmt.Sprintf("model=%q", resolvedModel), fmt.Sprintf("prompt_tokens=%d", outcome.Usage.PromptTokens), fmt.Sprintf("completion_tokens=%d", outcome.Usage.CompletionTokens), fmt.Sprintf("total_tokens=%d", outcome.Usage.TotalTokens))
 		s.logThinkingDecision("info", requestID, logger.String("route", string(request.Endpoint)), logger.String("provider", util.FirstNonEmpty(strings.TrimSpace(outcome.Provider), string(resolution.Provider))), logger.Bool("thinking_requested", preparedRequest.Thinking.Requested), logger.String("thinking_source", thinkingSourceValue(outcome.ThinkingSource, outcome.Thinking)), logger.Bool("thinking_emitted", strings.TrimSpace(outcome.Thinking) != ""))
 		return outcomeToIRResponse(outcome, preparedRequest.Model), 0, "", nil
 	case route.ProviderKiro:
@@ -64,7 +65,8 @@ func (s *Server) executeRequest(ctx context.Context, request contract.Request) (
 		if execErr != nil {
 			return contract.Response{}, status, message, execErr
 		}
-		s.logRequestEvent("info", requestID, "provider_completed", fmt.Sprintf("route=%q", string(request.Endpoint)), fmt.Sprintf("provider=%q", util.FirstNonEmpty(strings.TrimSpace(outcome.Provider), string(resolution.Provider))), fmt.Sprintf("account=%q", strings.TrimSpace(outcome.AccountLabel)), fmt.Sprintf("model=%q", strings.TrimSpace(outcome.Model)), fmt.Sprintf("prompt_tokens=%d", outcome.Usage.PromptTokens), fmt.Sprintf("completion_tokens=%d", outcome.Usage.CompletionTokens), fmt.Sprintf("total_tokens=%d", outcome.Usage.TotalTokens))
+		resolvedModel := util.FirstNonEmpty(strings.TrimSpace(outcome.Model), strings.TrimSpace(preparedRequest.Model))
+		s.logRequestEvent("info", requestID, "provider_completed", fmt.Sprintf("route=%q", string(request.Endpoint)), fmt.Sprintf("provider=%q", util.FirstNonEmpty(strings.TrimSpace(outcome.Provider), string(resolution.Provider))), fmt.Sprintf("account=%q", strings.TrimSpace(outcome.AccountLabel)), fmt.Sprintf("model=%q", resolvedModel), fmt.Sprintf("prompt_tokens=%d", outcome.Usage.PromptTokens), fmt.Sprintf("completion_tokens=%d", outcome.Usage.CompletionTokens), fmt.Sprintf("total_tokens=%d", outcome.Usage.TotalTokens))
 		s.logThinkingDecision("info", requestID, logger.String("route", string(request.Endpoint)), logger.String("provider", util.FirstNonEmpty(strings.TrimSpace(outcome.Provider), string(resolution.Provider))), logger.Bool("thinking_requested", preparedRequest.Thinking.Requested), logger.String("thinking_source", thinkingSourceValue(outcome.ThinkingSource, outcome.Thinking)), logger.Bool("thinking_emitted", strings.TrimSpace(outcome.Thinking) != ""))
 		return outcomeToIRResponse(outcome, preparedRequest.Model), 0, "", nil
 	default:
