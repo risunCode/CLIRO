@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Activity, LayoutDashboard, Logs, Moon, Network, Palette, Settings2, Sun, Users } from 'lucide-svelte'
-  import { getNextThemeLabel, type Theme } from '@/shared/stores/theme'
-  import Button from '@/components/common/Button.svelte'
-  import appIcon from '@/assets/icons/cliro-icon.png'
   import { APP_TABS, type AppTabId } from '@/app/lib/tabs'
+  import appIcon from '@/assets/icons/cliro-icon.png'
+  import Button from '@/shared/components/Button.svelte'
+  import { getNextThemeLabel, type Theme } from '@/shared/stores/theme'
 
   export let activeTab: AppTabId = 'dashboard'
   export let theme: Theme = 'light'

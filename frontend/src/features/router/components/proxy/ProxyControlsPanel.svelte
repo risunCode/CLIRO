@@ -1,6 +1,6 @@
 <script lang="ts">
-  import ControlWorkspaceCard from '@/components/common/ControlWorkspaceCard.svelte'
-  import StatusBadge from '@/components/common/StatusBadge.svelte'
+  import ControlWorkspaceCard from '@/shared/components/ControlWorkspaceCard.svelte'
+  import StatusBadge from '@/shared/components/StatusBadge.svelte'
   import ProxyRuntimeCard from '@/features/router/components/proxy/ProxyRuntimeCard.svelte'
   import ProxySecurityCard from '@/features/router/components/proxy/ProxySecurityCard.svelte'
   import type { ProxyStatus } from '@/features/router/types'

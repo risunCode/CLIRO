@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { TriangleAlert, Trash2 } from 'lucide-svelte'
-  import BaseModal from '@/components/common/BaseModal.svelte'
-  import Button from '@/components/common/Button.svelte'
+  import BaseModal from '@/shared/components/BaseModal.svelte'
+  import Button from '@/shared/components/Button.svelte'
   import { formatNumber } from '@/shared/lib/formatters'
 
   export let open = false

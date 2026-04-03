@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ArrowLeftRight, Download, Info, Power, PowerOff, RefreshCw, Trash2 } from 'lucide-svelte'
-  import Button from '@/components/common/Button.svelte'
+  import Button from '@/shared/components/Button.svelte'
 
   export let mode: 'card' | 'table' = 'card'
   export let accountID = ''

@@ -2,9 +2,9 @@
   import { onDestroy } from 'svelte'
   import { Copy, Download, RefreshCw, Search, Trash2 } from 'lucide-svelte'
   import type { LogEntry } from '@/app/types'
-  import Button from '@/components/common/Button.svelte'
-  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
-  import StatusBadge from '@/components/common/StatusBadge.svelte'
+  import Button from '@/shared/components/Button.svelte'
+  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
+  import StatusBadge from '@/shared/components/StatusBadge.svelte'
   import {
     LOG_TABLE_MAX_ENTRIES,
     buildExportPayload,

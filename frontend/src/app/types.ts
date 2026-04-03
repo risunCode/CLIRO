@@ -1,6 +1,6 @@
-import type { logger, main } from '../../wailsjs/go/models'
+import type { WailsAppState, WailsLogEntry } from '@/shared/api/wails/models'
 
-export type AppState = main.State & {
+export type AppState = WailsAppState & {
   startupWarnings?: Array<{
     code?: string
     filePath?: string
@@ -9,7 +9,7 @@ export type AppState = main.State & {
   }>
 }
 
-export type LogEntry = logger.Entry
+export type LogEntry = WailsLogEntry
 
 export interface UpdateInfo {
   currentVersion: string

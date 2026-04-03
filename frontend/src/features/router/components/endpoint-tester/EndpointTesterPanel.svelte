@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { ChevronDown, ChevronUp, Copy, Network, Play } from 'lucide-svelte'
-  import Button from '@/components/common/Button.svelte'
-  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
-  import StatusBadge from '@/components/common/StatusBadge.svelte'
-  import { routerApi } from '@/features/router/api/router-api'
-  import type { ProxyStatus } from '@/features/router/types'
+  import Button from '@/shared/components/Button.svelte'
+  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
+  import StatusBadge from '@/shared/components/StatusBadge.svelte'
+  import type { EndpointTestRequest, EndpointTestResult, ProxyStatus } from '@/features/router/types'
   import { copyTextToClipboard, hasClipboardWrite } from '@/shared/lib/browser'
   import { ENDPOINT_PRESETS, buildTesterStructuredResponse, getEndpointPreset, getEndpointRequestBody, type EndpointPreset, type TesterStructuredResponse } from '@/features/router/lib/endpoint-tester'
 
   export let proxyStatus: ProxyStatus | null = null
   export let apiKey = ''
+  export let onExecuteEndpointTest: (request: EndpointTestRequest) => Promise<EndpointTestResult>
 
   let expanded = false
   let selectedEndpointId = ENDPOINT_PRESETS[0].id
@@ -54,7 +54,7 @@
     thinkingExpanded = false
 
     try {
-      const result = await routerApi.executeEndpointTest({
+      const result = await onExecuteEndpointTest({
         baseUrl: proxyStatus.url,
         apiKey,
         endpointId: selectedEndpointId,

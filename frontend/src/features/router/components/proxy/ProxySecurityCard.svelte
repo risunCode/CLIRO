@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { Copy, KeyRound, Pencil, RefreshCw, Save, X } from 'lucide-svelte'
-  import Button from '@/components/common/Button.svelte'
-  import StatusBadge from '@/components/common/StatusBadge.svelte'
+  import Button from '@/shared/components/Button.svelte'
+  import StatusBadge from '@/shared/components/StatusBadge.svelte'
   import ProxyInlineSwitch from '@/features/router/components/proxy/ProxyInlineSwitch.svelte'
   import type { ProxyStatus } from '@/features/router/types'
   import { copyTextToClipboard, hasClipboardWrite } from '@/shared/lib/browser'

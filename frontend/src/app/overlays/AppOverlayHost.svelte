@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { AppActions, AppOverlayState, SettingsActions } from '@/app/services/app-controller'
-import ToastViewport from '@/components/common/ToastViewport.svelte'
   import AppCloseModal from '@/app/modals/AppCloseModal.svelte'
   import ConfigurationRecoveryModal from '@/app/modals/ConfigurationRecoveryModal.svelte'
   import UpdateRequiredModal from '@/app/modals/UpdateRequiredModal.svelte'
+  import ToastViewport from '@/shared/components/ToastViewport.svelte'
 
   export let overlays: AppOverlayState
   export let appActions: AppActions
@@ -15,6 +15,8 @@ import ToastViewport from '@/components/common/ToastViewport.svelte'
 <AppCloseModal
   open={overlays.showClosePrompt}
   trayAvailable={overlays.trayAvailable}
+  armed={overlays.closePromptArmed}
+  countdownSeconds={overlays.closePromptCountdown}
   on:dismiss={appActions.dismissClosePrompt}
   on:confirmQuit={appActions.confirmQuit}
   on:hideToTray={appActions.hideToTray}

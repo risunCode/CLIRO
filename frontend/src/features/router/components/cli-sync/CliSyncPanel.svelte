@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { Info, RefreshCw } from 'lucide-svelte'
-  import Button from '@/components/common/Button.svelte'
-  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
-  import StatusBadge from '@/components/common/StatusBadge.svelte'
+  import Button from '@/shared/components/Button.svelte'
+  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
+  import StatusBadge from '@/shared/components/StatusBadge.svelte'
   import CliSyncInfoModal from '@/features/router/components/cli-sync/CliSyncInfoModal.svelte'
-  import { routerApi } from '@/features/router/api/router-api'
   import type { CliSyncAppID, CliSyncResult, CliSyncStatus, LocalModelCatalogItem } from '@/features/router/types'
   import { CLI_SYNC_CARDS, groupCliModels } from '@/features/router/lib/cli-sync'
 
@@ -13,6 +12,7 @@
   export let proxyBaseURL = ''
   export let proxyAPIKey = ''
   export let onGetCLISyncStatuses: () => Promise<CliSyncStatus[]>
+  export let onGetEffectiveModelCatalog: (baseUrl: string, apiKey: string) => Promise<LocalModelCatalogItem[]>
   export let onGetCLISyncFileContent: (appId: CliSyncAppID, path: string) => Promise<string>
   export let onSaveCLISyncFileContent: (appId: CliSyncAppID, path: string, content: string) => Promise<void>
   export let onSyncCLIConfig: (appId: CliSyncAppID, model: string) => Promise<CliSyncResult>
@@ -73,7 +73,7 @@
     try {
       const [statusesResult, modelsResult] = await Promise.allSettled([
         onGetCLISyncStatuses(),
-        routerApi.getEffectiveModelCatalog(proxyBaseURL, proxyAPIKey)
+        onGetEffectiveModelCatalog(proxyBaseURL, proxyAPIKey)
       ])
 
       if (requestID !== refreshRequestID) {

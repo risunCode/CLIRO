@@ -1,0 +1,28 @@
+/* Settings Feature Styles */
+
+/* ========================================================================== */
+/* ================= TAB: SETTINGS ================= */
+/* ========================================================================== */
+
+.settings-tab .settings-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.settings-tab .settings-field > span {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-tab .settings-toggle-row {
+  display: grid;
+  gap: 0.65rem;
+}
+
+@media (min-width: 768px) {
+  .settings-tab .settings-toggle-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

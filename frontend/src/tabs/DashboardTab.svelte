@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { Ban, Gauge, Server, Users } from 'lucide-svelte'
-  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
-  import StatusBadge from '@/components/common/StatusBadge.svelte'
+  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
+  import StatusBadge from '@/shared/components/StatusBadge.svelte'
   import { systemApi } from '@/app/api/system-api'
   import type { AppState } from '@/app/types'
   import type { Account } from '@/features/accounts/types'
@@ -10,10 +10,14 @@
   import { deriveQuotaDisplayStatus } from '@/features/accounts/lib/account-quota'
   import { formatNumber, formatUnixSeconds } from '@/shared/lib/formatters'
 
+  type DashboardBadgeTone = 'neutral' | 'success' | 'error' | 'info' | 'warning'
+
   export let state: AppState | null = null
   export let accounts: Account[] = []
   export let proxyStatus: ProxyStatus | null = null
   export let loading = false
+  export let loadingProxyStatus = false
+  export let waitingForProxyAutostart = false
 
   let greeting = 'Hello'
   let hostName = 'This PC'
@@ -72,9 +76,12 @@
   $: completionTokens = stats?.completionTokens ?? 0
   $: totalTokens = stats?.totalTokens ?? 0
   $: failureRate = totalRequests > 0 ? (failedRequests / totalRequests) * 100 : 0
-  $: proxyRunning = proxyStatus?.running ?? state?.proxyRunning ?? false
+  $: proxyRunning = proxyStatus?.running ?? (!loadingProxyStatus ? state?.proxyRunning ?? false : false)
   $: proxyPort = proxyStatus?.port ?? state?.proxyPort ?? 0
   $: proxyURL = proxyStatus?.url || state?.proxyUrl || '-'
+  $: proxyBadgeTone = (waitingForProxyAutostart ? 'warning' : proxyRunning ? 'success' : 'error') as DashboardBadgeTone
+  $: proxyBadgeLabel = waitingForProxyAutostart ? 'Proxy Starting' : proxyRunning ? 'Proxy Running' : 'Proxy Stopped'
+  $: proxyStatusLabel = waitingForProxyAutostart ? 'Starting' : proxyRunning ? 'Running' : 'Stopped'
 </script>
 
 <div class="space-y-3">
@@ -89,7 +96,7 @@
 
       <div class="flex flex-wrap items-center gap-2">
         <StatusBadge tone="neutral">Accounts {formatNumber(accounts.length)}</StatusBadge>
-        <StatusBadge tone={proxyRunning ? 'success' : 'error'}>{proxyRunning ? 'Proxy Running' : 'Proxy Stopped'}</StatusBadge>
+        <StatusBadge tone={proxyBadgeTone}>{proxyBadgeLabel}</StatusBadge>
         <StatusBadge tone="info">Port {proxyPort}</StatusBadge>
       </div>
     </div>
@@ -112,9 +119,7 @@
       </div>
       <div class="flex items-center gap-2">
         <p class="text-2xl font-semibold text-text-primary">{proxyPort}</p>
-        <StatusBadge tone={proxyRunning ? 'success' : 'error'}>
-          {proxyRunning ? 'Running' : 'Stopped'}
-        </StatusBadge>
+        <StatusBadge tone={proxyBadgeTone}>{proxyStatusLabel}</StatusBadge>
       </div>
       <p class="mt-0.5 truncate text-xs text-text-secondary">{proxyURL}</p>
     </SurfaceCard>

@@ -4,7 +4,6 @@
   import AccountsWorkspaceModals from '@/features/accounts/components/modals/AccountsWorkspaceModals.svelte'
   import { toastStore } from '@/shared/stores/toast'
   import { getErrorMessage } from '@/shared/lib/error'
-  import { accountsAuthApi } from '@/features/accounts/api/auth-api'
   import {
     computeAccountsViewState,
     isPendingAuthSession,
@@ -58,6 +57,7 @@
   export let onSyncCodexAccountToCodexCLI: (accountId: string) => Promise<CodexAuthSyncResult>
   export let onRefreshAccountWithQuota: (accountId: string) => Promise<void>
   export let onDeleteAccount: (accountId: string) => Promise<void>
+  export let onSubmitCodexAuthCode: (sessionId: string, code: string) => Promise<void>
 
   const initialState = createInitialWorkspaceState(loadAccountsPreferences())
 
@@ -486,11 +486,12 @@
 
   const handleSubmitCodexAuthCode = async (event: CustomEvent<{ code: string }>): Promise<void> => {
     const code = event.detail.code
-    if (!code || !authSession?.sessionId) {
+    const sessionID = authSession?.sessionId || ''
+    if (!code || !sessionID) {
       return
     }
     try {
-      await accountsAuthApi.submitCodexAuthCode(authSession.sessionId, code)
+      await onSubmitCodexAuthCode(sessionID, code)
       toastStore.push('success', 'Authorization Code Submitted', 'Exchanging code for access token...')
     } catch (error) {
       toastStore.push('error', 'Code Submission Failed', getErrorMessage(error))

@@ -1,11 +1,11 @@
-import type { codex, config } from '../../../wailsjs/go/models'
+import type { WailsAccount, WailsCodexAuthSessionView } from '@/shared/api/wails/models'
 
-export type Account = config.Account & {
+export type Account = WailsAccount & {
   banned?: boolean
   bannedReason?: string
 }
 
-export type AuthSession = codex.AuthSessionView
+export type AuthSession = WailsCodexAuthSessionView
 
 export interface KiroAuthSession {
   sessionId: string

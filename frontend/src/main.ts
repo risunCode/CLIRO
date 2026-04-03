@@ -1,4 +1,4 @@
-import './global.css'
+import './styles/index.css'
 import App from '@/App.svelte'
 import { getErrorMessage } from '@/shared/lib/error'
 import { toastStore } from '@/shared/stores/toast'

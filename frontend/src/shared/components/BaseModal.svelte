@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
-  import ModalBackdrop from '@/components/common/ModalBackdrop.svelte'
+  import ModalBackdrop from '@/shared/components/ModalBackdrop.svelte'
 
   export let open = false
   export let overlayClass = 'items-center justify-center p-4'

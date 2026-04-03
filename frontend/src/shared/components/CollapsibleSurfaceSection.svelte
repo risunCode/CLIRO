@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ChevronDown, ChevronUp } from 'lucide-svelte'
   import { slide } from 'svelte/transition'
-  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
+  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
 
   export let open = false
   export let title = ''

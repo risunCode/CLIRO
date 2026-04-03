@@ -1,6 +1,6 @@
 <script lang="ts">
   import { RefreshCw } from 'lucide-svelte'
-  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
+  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
   import type { ProxyStatus } from '@/features/router/types'
   import { SCHEDULING_MODE_CARDS, toSchedulingMode, type SchedulingMode } from '@/features/router/lib/scheduling'
 

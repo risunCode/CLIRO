@@ -1,15 +1,15 @@
-import type { codex, kiro } from '../../../../wailsjs/go/models'
-import { CancelCodexAuth, CancelKiroAuth, GetCodexAuthSession, GetKiroAuthSession, StartCodexAuth, StartKiroAuth, StartKiroSocialAuth, SubmitCodexAuthCode, SubmitKiroAuthCode } from '@/shared/api/wails/client'
+import { wailsGateway } from '@/shared/api/wails/gateway'
+import type { WailsCodexAuthStart, WailsKiroAuthStart } from '@/shared/api/wails/models'
 import type { AuthSession, KiroAuthSession } from '@/features/accounts/types'
 
 export const accountsAuthApi = {
-  startCodexAuth: (): Promise<codex.AuthStart> => StartCodexAuth(),
-  getCodexAuthSession: (sessionId: string): Promise<AuthSession> => GetCodexAuthSession(sessionId),
-  cancelCodexAuth: (sessionId: string): Promise<void> => CancelCodexAuth(sessionId),
-  submitCodexAuthCode: (sessionId: string, code: string): Promise<void> => SubmitCodexAuthCode(sessionId, code),
-  startKiroAuth: (): Promise<kiro.AuthStart> => StartKiroAuth(),
-  startKiroSocialAuth: (provider: string): Promise<kiro.AuthStart> => StartKiroSocialAuth(provider),
-  getKiroAuthSession: (sessionId: string): Promise<KiroAuthSession> => GetKiroAuthSession(sessionId),
-  cancelKiroAuth: (sessionId: string): Promise<void> => CancelKiroAuth(sessionId),
-  submitKiroAuthCode: (sessionId: string, code: string): Promise<void> => SubmitKiroAuthCode(sessionId, code)
+  startCodexAuth: (): Promise<WailsCodexAuthStart> => wailsGateway.auth.startCodexAuth(),
+  getCodexAuthSession: (sessionId: string): Promise<AuthSession> => wailsGateway.auth.getCodexAuthSession(sessionId),
+  cancelCodexAuth: (sessionId: string): Promise<void> => wailsGateway.auth.cancelCodexAuth(sessionId),
+  submitCodexAuthCode: (sessionId: string, code: string): Promise<void> => wailsGateway.auth.submitCodexAuthCode(sessionId, code),
+  startKiroAuth: (): Promise<WailsKiroAuthStart> => wailsGateway.auth.startKiroAuth(),
+  startKiroSocialAuth: (provider: string): Promise<WailsKiroAuthStart> => wailsGateway.auth.startKiroSocialAuth(provider),
+  getKiroAuthSession: (sessionId: string): Promise<KiroAuthSession> => wailsGateway.auth.getKiroAuthSession(sessionId) as Promise<KiroAuthSession>,
+  cancelKiroAuth: (sessionId: string): Promise<void> => wailsGateway.auth.cancelKiroAuth(sessionId),
+  submitKiroAuthCode: (sessionId: string, code: string): Promise<void> => wailsGateway.auth.submitKiroAuthCode(sessionId, code)
 }

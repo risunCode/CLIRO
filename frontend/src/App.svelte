@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import AppOverlayStack from '@/app/providers/AppOverlayStack.svelte'
+  import AppOverlayHost from '@/app/overlays/AppOverlayHost.svelte'
   import { createAppController } from '@/app/services/app-controller'
   import AppFrame from '@/app/shell/AppFrame.svelte'
   import { theme, toggleTheme } from '@/shared/stores/theme'
@@ -29,5 +29,5 @@
     onToggleTheme={toggleTheme}
   />
 
-  <AppOverlayStack overlays={$overlays} {appActions} {settingsActions} />
+  <AppOverlayHost overlays={$overlays} {appActions} {settingsActions} />
 </main>

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
-  import BaseModal from '@/components/common/BaseModal.svelte'
-  import Button from '@/components/common/Button.svelte'
-  import ModalWindowHeader from '@/components/common/ModalWindowHeader.svelte'
+  import BaseModal from '@/shared/components/BaseModal.svelte'
+  import Button from '@/shared/components/Button.svelte'
+  import ModalWindowHeader from '@/shared/components/ModalWindowHeader.svelte'
 
   export let open = false
   export let currentVersion = ''

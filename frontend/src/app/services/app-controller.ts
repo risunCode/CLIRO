@@ -1,13 +1,8 @@
 import { get, writable, type Readable } from 'svelte/store'
 import { logsApi } from '@/app/api/logs-api'
 import { systemApi } from '@/app/api/system-api'
-import {
-  assertBackupPayloadRestorable,
-  parseBackupNumber,
-  validateBackupPayload,
-  type BackupPayload,
-  type RestoreProgress
-} from '@/app/lib/backup'
+import { initializeAppBootstrap, type AppBootstrapHandle } from '@/app/bootstrap/app-bootstrap'
+import { bindAppActivityEvents, bindAppRuntimeEvents } from '@/app/bootstrap/app-events'
 import type { AppTabId } from '@/app/lib/tabs'
 import { subscribeToRingLogs } from '@/app/services/logs-subscription'
 import { mapStartupWarnings, type StartupWarningEntry } from '@/app/services/startup-warnings'
@@ -25,12 +20,34 @@ import type {
 } from '@/features/accounts/types'
 import { routerApi } from '@/features/router/api/router-api'
 import type { CliSyncAppID, CliSyncResult, ProxyStatus } from '@/features/router/types'
+import {
+  assertBackupPayloadRestorable,
+  parseBackupNumber,
+  validateBackupPayload,
+  type BackupPayload,
+  type RestoreProgress
+} from '@/features/settings/lib/backup'
 import { downloadJSONFile } from '@/shared/lib/browser'
 import { getErrorMessage } from '@/shared/lib/error'
 import { toastStore } from '@/shared/stores/toast'
-import { EventsOn } from '../../../wailsjs/runtime/runtime'
 
 const SYSTEM_LOG_LIMIT = 500
+const PROXY_HEARTBEAT_INTERVAL_MS = 5000
+const ACTIVE_TAB_REFRESH_INTERVAL_MS = 5000
+const AUTO_START_PROXY_RETRY_DELAYS_MS = [1500, 4000]
+const CLOSE_ARMED_TIMEOUT_MS = 5000
+
+interface ProxyRefreshOptions {
+  loading?: boolean
+}
+
+interface LogsRefreshOptions {
+  loading?: boolean
+}
+
+interface SnapshotRefreshOptions {
+  loading?: boolean
+}
 
 interface AppActionToast {
   title: string
@@ -63,16 +80,20 @@ export interface AppShellState {
   authSession: AuthSession | null
   kiroAuthSession: KiroAuthSession | null
   loadingDashboard: boolean
+  loadingProxyStatus: boolean
   loadingLogs: boolean
   clearingLogs: boolean
   proxyBusy: boolean
   authWorking: boolean
   refreshingAllQuotas: boolean
+  waitingForProxyAutostart: boolean
   busyAccountIds: string[]
 }
 
 export interface AppOverlayState {
   showClosePrompt: boolean
+  closePromptArmed: boolean
+  closePromptCountdown: number
   showUpdatePrompt: boolean
   showConfigurationErrorModal: boolean
   startupWarnings: StartupWarningEntry[]
@@ -166,16 +187,20 @@ const initialShellState: AppShellState = {
   authSession: null,
   kiroAuthSession: null,
   loadingDashboard: false,
+  loadingProxyStatus: false,
   loadingLogs: false,
   clearingLogs: false,
   proxyBusy: false,
   authWorking: false,
   refreshingAllQuotas: false,
+  waitingForProxyAutostart: false,
   busyAccountIds: []
 }
 
 const initialOverlayState: AppOverlayState = {
   showClosePrompt: false,
+  closePromptArmed: false,
+  closePromptCountdown: 0,
   showUpdatePrompt: false,
   showConfigurationErrorModal: false,
   startupWarnings: [],
@@ -190,11 +215,14 @@ export function createAppController(): AppController {
 
   let startupWarningsShown = false
   let unsubscribeLogs: (() => void) | null = null
-  let unsubscribeSecondInstance: (() => void) | null = null
-  let unsubscribeCloseRequested: (() => void) | null = null
-  let unsubscribeWindowRestored: (() => void) | null = null
-  let unsubscribeProxyStateChanged: (() => void) | null = null
-  let unsubscribeTrayStateChanged: (() => void) | null = null
+  let bootstrapHandle: AppBootstrapHandle | null = null
+  let proxyHeartbeatTimer: number | null = null
+  let activeTabRefreshTimer: number | null = null
+  let proxyAutostartRetryTimers: number[] = []
+  let closePromptDeadlineAt = 0
+  let closePromptTimeoutTimer: number | null = null
+  let closePromptCountdownTimer: number | null = null
+  const inFlightRefreshes = new Map<string, Promise<void>>()
 
   const patchShell = (patch: Partial<AppShellState>): void => {
     shell.update((current) => ({ ...current, ...patch }))
@@ -210,6 +238,119 @@ export function createAppController(): AppController {
 
   const notifySuccess = (title: string, message: string): void => {
     toastStore.push('success', title, message)
+  }
+
+  const runSingleFlight = (key: string, task: () => Promise<void>): Promise<void> => {
+    const inFlight = inFlightRefreshes.get(key)
+    if (inFlight) {
+      return inFlight
+    }
+
+    const promise = (async () => {
+      await task()
+    })().finally(() => {
+      if (inFlightRefreshes.get(key) === promise) {
+        inFlightRefreshes.delete(key)
+      }
+    })
+
+    inFlightRefreshes.set(key, promise)
+    return promise
+  }
+
+  const throwIfEverythingFailed = (results: PromiseSettledResult<void>[]): void => {
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failure && results.every((result) => result.status === 'rejected')) {
+      throw failure.reason
+    }
+  }
+
+  const isDocumentVisible = (): boolean => {
+    if (typeof document === 'undefined') {
+      return true
+    }
+    return document.visibilityState !== 'hidden'
+  }
+
+  const clearProxyHeartbeat = (): void => {
+    if (proxyHeartbeatTimer !== null) {
+      clearInterval(proxyHeartbeatTimer)
+      proxyHeartbeatTimer = null
+    }
+  }
+
+  const clearActiveTabRefreshTimer = (): void => {
+    if (activeTabRefreshTimer !== null) {
+      clearInterval(activeTabRefreshTimer)
+      activeTabRefreshTimer = null
+    }
+  }
+
+  const clearProxyAutostartRetries = (): void => {
+    proxyAutostartRetryTimers.forEach((timer) => clearTimeout(timer))
+    proxyAutostartRetryTimers = []
+  }
+
+  const stopPolling = (): void => {
+    clearProxyHeartbeat()
+    clearActiveTabRefreshTimer()
+  }
+
+  const clearClosePromptTimers = (): void => {
+    if (closePromptTimeoutTimer !== null) {
+      clearTimeout(closePromptTimeoutTimer)
+      closePromptTimeoutTimer = null
+    }
+    if (closePromptCountdownTimer !== null) {
+      clearInterval(closePromptCountdownTimer)
+      closePromptCountdownTimer = null
+    }
+  }
+
+  const updateClosePromptCountdown = (): void => {
+    if (closePromptDeadlineAt <= 0) {
+      patchOverlays({ closePromptCountdown: 0 })
+      return
+    }
+
+    const remainingMs = Math.max(0, closePromptDeadlineAt - Date.now())
+    const remainingSeconds = Math.ceil(remainingMs / 1000)
+    patchOverlays({ closePromptCountdown: remainingSeconds })
+
+    if (remainingMs <= 0) {
+      clearClosePromptTimers()
+    }
+  }
+
+  const resetClosePromptFlow = ({ hidePrompt }: { hidePrompt: boolean } = { hidePrompt: false }): void => {
+    closePromptDeadlineAt = 0
+    clearClosePromptTimers()
+    patchOverlays({
+      ...(hidePrompt ? { showClosePrompt: false } : {}),
+      closePromptArmed: false,
+      closePromptCountdown: 0
+    })
+  }
+
+  const armClosePromptFlow = (): void => {
+    clearClosePromptTimers()
+
+    closePromptDeadlineAt = Date.now() + CLOSE_ARMED_TIMEOUT_MS
+    patchOverlays({
+      showClosePrompt: true,
+      closePromptArmed: true
+    })
+    updateClosePromptCountdown()
+
+    if (typeof window !== 'undefined') {
+      closePromptTimeoutTimer = window.setTimeout(() => {
+        void handleConfirmQuit()
+      }, CLOSE_ARMED_TIMEOUT_MS)
+
+      closePromptCountdownTimer = window.setInterval(() => {
+        updateClosePromptCountdown()
+      }, 250)
+    }
   }
 
   const markAccountBusy = (accountId: string, busy: boolean): void => {
@@ -311,11 +452,39 @@ export function createAppController(): AppController {
     })
   }
 
+  const cancelProxyAutostartWait = (): void => {
+    clearProxyAutostartRetries()
+    if (get(shell).waitingForProxyAutostart) {
+      patchShell({ waitingForProxyAutostart: false })
+    }
+  }
+
+  const syncProxyAutostartWait = (nextState?: AppState | null, nextProxyStatus?: ProxyStatus | null): void => {
+    if (!get(shell).waitingForProxyAutostart) {
+      return
+    }
+
+    const resolvedState = nextState ?? get(shell).state
+    const resolvedProxyStatus = nextProxyStatus ?? get(shell).proxyStatus
+    const proxyRunning = resolvedProxyStatus?.running ?? resolvedState?.proxyRunning ?? false
+    const autoStartProxy = resolvedState?.autoStartProxy ?? false
+
+    if (proxyRunning || !autoStartProxy) {
+      cancelProxyAutostartWait()
+    }
+  }
+
   const refreshState = async (): Promise<void> => {
-    const nextState = await systemApi.getState()
-    patchShell({ state: nextState })
-    syncStartupWarnings(nextState)
-    syncTrayAvailability(nextState)
+    await runSingleFlight('state', async () => {
+      const nextState = await systemApi.getState()
+      patchShell({
+        state: nextState,
+        accounts: nextState.accounts || []
+      })
+      syncStartupWarnings(nextState)
+      syncTrayAvailability(nextState)
+      syncProxyAutostartWait(nextState)
+    })
   }
 
   const refreshStateSafe = async (): Promise<void> => {
@@ -329,19 +498,18 @@ export function createAppController(): AppController {
   const refreshStateForClosePrompt = async (): Promise<void> => {
     try {
       const nextState = await systemApi.getState()
-      patchShell({ state: nextState })
+      patchShell({
+        state: nextState,
+        accounts: nextState.accounts || []
+      })
       syncTrayAvailability(nextState)
     } catch {
       // Best effort: if state refresh fails, keep current snapshot and still show close prompt.
     }
   }
 
-  const refreshAccounts = async (): Promise<void> => {
-    patchShell({ accounts: await accountsApi.getAccounts() })
-  }
-
   const refreshAccountsState = async (): Promise<void> => {
-    await Promise.all([refreshAccounts(), refreshState()])
+    await refreshState()
   }
 
   const refreshAccountsStateSafe = async (): Promise<void> => {
@@ -352,12 +520,38 @@ export function createAppController(): AppController {
     }
   }
 
-  const refreshProxyStatus = async (): Promise<void> => {
-    patchShell({ proxyStatus: await routerApi.getProxyStatus() })
+  const refreshProxyStatus = async ({ loading = false }: ProxyRefreshOptions = {}): Promise<void> => {
+    await runSingleFlight('proxy-status', async () => {
+      if (loading) {
+        patchShell({ loadingProxyStatus: true })
+      }
+
+      try {
+        const nextProxyStatus = await routerApi.getProxyStatus()
+        patchShell({ proxyStatus: nextProxyStatus })
+        syncProxyAutostartWait(undefined, nextProxyStatus)
+      } finally {
+        if (loading) {
+          patchShell({ loadingProxyStatus: false })
+        }
+      }
+    })
   }
 
-  const refreshCloudflaredStatus = async (): Promise<void> => {
-    patchShell({ proxyStatus: await routerApi.refreshCloudflaredStatus() })
+  const refreshCloudflaredStatus = async ({ loading = false }: ProxyRefreshOptions = {}): Promise<void> => {
+    if (loading) {
+      patchShell({ loadingProxyStatus: true })
+    }
+
+    try {
+      const nextProxyStatus = await routerApi.refreshCloudflaredStatus()
+      patchShell({ proxyStatus: nextProxyStatus })
+      syncProxyAutostartWait(undefined, nextProxyStatus)
+    } finally {
+      if (loading) {
+        patchShell({ loadingProxyStatus: false })
+      }
+    }
   }
 
   const refreshProxyStatusSafe = async (): Promise<void> => {
@@ -377,7 +571,8 @@ export function createAppController(): AppController {
   }
 
   const refreshProxySnapshot = async (): Promise<void> => {
-    await Promise.all([refreshState(), refreshCloudflaredStatus()])
+    const results = await Promise.allSettled([refreshState(), refreshCloudflaredStatus()])
+    throwIfEverythingFailed(results)
   }
 
   const refreshProxySnapshotSafe = async (): Promise<void> => {
@@ -388,58 +583,159 @@ export function createAppController(): AppController {
     }
   }
 
-  const refreshLogs = async (limit = SYSTEM_LOG_LIMIT): Promise<void> => {
-    patchShell({ loadingLogs: true })
-    try {
-      patchShell({ logs: await logsApi.getLogs(limit) })
-    } finally {
-      patchShell({ loadingLogs: false })
-    }
-  }
-
-  const refreshCoreSafe = async (): Promise<void> => {
-    try {
-      await refreshCore()
-    } catch (error) {
-      notifyError('Refresh Snapshot Failed', error)
-    }
-  }
-
-  const refreshCore = async (): Promise<void> => {
-    patchShell({ loadingDashboard: true })
-    try {
-      const nextStatePromise = systemApi.getState()
-      const nextAccountsPromise = accountsApi.getAccounts()
-
-      let firstError: unknown = null
-      let successCount = 0
-
-      try {
-        const nextState = await nextStatePromise
-        patchShell({ state: nextState })
-        syncStartupWarnings(nextState)
-        syncTrayAvailability(nextState)
-        successCount += 1
-      } catch (error) {
-        firstError = error
+  const refreshLogs = async (limit = SYSTEM_LOG_LIMIT, { loading = true }: LogsRefreshOptions = {}): Promise<void> => {
+    await runSingleFlight(`logs:${limit}`, async () => {
+      if (loading) {
+        patchShell({ loadingLogs: true })
       }
 
       try {
-        const nextAccounts = await nextAccountsPromise
-        patchShell({ accounts: nextAccounts })
-        successCount += 1
-      } catch (error) {
-        if (firstError === null) {
-          firstError = error
+        patchShell({ logs: await logsApi.getLogs(limit) })
+      } finally {
+        if (loading) {
+          patchShell({ loadingLogs: false })
         }
       }
+    })
+  }
 
-      if (successCount === 0 && firstError !== null) {
-        throw firstError
-      }
-    } finally {
-      patchShell({ loadingDashboard: false })
+  const refreshCore = async ({ loading = false }: SnapshotRefreshOptions = {}): Promise<void> => {
+    if (loading) {
+      patchShell({ loadingDashboard: true })
     }
+
+    try {
+      const results = await Promise.allSettled([refreshState(), refreshProxyStatus({ loading })])
+      throwIfEverythingFailed(results)
+    } finally {
+      if (loading) {
+        patchShell({ loadingDashboard: false })
+      }
+    }
+  }
+
+  const refreshUsageSnapshot = async (): Promise<void> => {
+    const results = await Promise.allSettled([refreshState(), refreshProxyStatus(), refreshLogs(SYSTEM_LOG_LIMIT, { loading: false })])
+    throwIfEverythingFailed(results)
+  }
+
+  const refreshCoreSilently = async (): Promise<void> => {
+    try {
+      await refreshCore()
+    } catch {
+      // Background refresh is best-effort.
+    }
+  }
+
+  const refreshProxyStatusSilently = async (): Promise<void> => {
+    try {
+      await refreshProxyStatus()
+    } catch {
+      // Background refresh is best-effort.
+    }
+  }
+
+  const refreshUsageSnapshotSilently = async (): Promise<void> => {
+    try {
+      await refreshUsageSnapshot()
+    } catch {
+      // Background refresh is best-effort.
+    }
+  }
+
+  const refreshAccountsSnapshotSilently = async (): Promise<void> => {
+    try {
+      await refreshState()
+    } catch {
+      // Background refresh is best-effort.
+    }
+  }
+
+  const refreshActiveTabSilently = async (activeTab = get(shell).activeTab): Promise<void> => {
+    if (!isDocumentVisible()) {
+      return
+    }
+
+    switch (activeTab) {
+      case 'dashboard':
+        await refreshCoreSilently()
+        return
+      case 'accounts':
+        await refreshAccountsSnapshotSilently()
+        return
+      case 'api-router':
+        await refreshProxyStatusSilently()
+        return
+      case 'usage':
+        await refreshUsageSnapshotSilently()
+        return
+      default:
+        return
+    }
+  }
+
+  const scheduleProxyAutostartRetries = (): void => {
+    clearProxyAutostartRetries()
+
+    AUTO_START_PROXY_RETRY_DELAYS_MS.forEach((delay, index) => {
+      const timer = window.setTimeout(() => {
+        if (!get(shell).waitingForProxyAutostart) {
+          return
+        }
+
+        void (async () => {
+          await refreshCoreSilently()
+
+          const currentShell = get(shell)
+          const proxyRunning = currentShell.proxyStatus?.running ?? currentShell.state?.proxyRunning ?? false
+          if (proxyRunning || index === AUTO_START_PROXY_RETRY_DELAYS_MS.length - 1) {
+            cancelProxyAutostartWait()
+          }
+        })()
+      }, delay)
+
+      proxyAutostartRetryTimers.push(timer)
+    })
+  }
+
+  const maybeWaitForProxyAutostart = (): void => {
+    const currentShell = get(shell)
+    const state = currentShell.state
+    const proxyRunning = currentShell.proxyStatus?.running ?? state?.proxyRunning ?? false
+    const shouldWait = state?.autoStartProxy === true && !proxyRunning
+
+    if (!shouldWait) {
+      cancelProxyAutostartWait()
+      return
+    }
+
+    patchShell({ waitingForProxyAutostart: true })
+    scheduleProxyAutostartRetries()
+  }
+
+  const startProxyHeartbeat = (): void => {
+    clearProxyHeartbeat()
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    proxyHeartbeatTimer = window.setInterval(() => {
+      if (!isDocumentVisible()) {
+        return
+      }
+      void refreshProxyStatusSilently()
+    }, PROXY_HEARTBEAT_INTERVAL_MS)
+  }
+
+  const startActiveTabRefreshLoop = (): void => {
+    clearActiveTabRefreshTimer()
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    activeTabRefreshTimer = window.setInterval(() => {
+      void refreshActiveTabSilently()
+    }, ACTIVE_TAB_REFRESH_INTERVAL_MS)
   }
 
   const handleSecondInstanceNotice = (payload: unknown): void => {
@@ -452,20 +748,33 @@ export function createAppController(): AppController {
   }
 
   const handleCloseRequested = (): void => {
+    const currentOverlays = get(overlays)
+
+    if (currentOverlays.closePromptArmed) {
+      void handleConfirmQuit()
+      return
+    }
+
+    if (currentOverlays.showClosePrompt) {
+      armClosePromptFlow()
+      return
+    }
+
+    resetClosePromptFlow()
+    patchOverlays({ showClosePrompt: true })
     void (async () => {
       await refreshStateForClosePrompt()
-      patchOverlays({ showClosePrompt: true })
     })()
   }
 
   const handleWindowRestored = (): void => {
-    void refreshCoreSafe()
-    void refreshProxyStatusSafe()
+    void refreshCoreSilently()
+    void refreshActiveTabSilently()
   }
 
   const handleProxyStateChanged = (): void => {
-    void refreshStateSafe()
-    void refreshProxyStatusSafe()
+    cancelProxyAutostartWait()
+    void refreshCoreSilently()
   }
 
   const handleTrayStateChanged = (): void => {
@@ -509,6 +818,7 @@ export function createAppController(): AppController {
   }
 
   const runProxyAction = async (title: string, action: () => Promise<void>, doneMessage: string): Promise<void> => {
+    cancelProxyAutostartWait()
     await withBusyFlag(
       (busy) => patchShell({ proxyBusy: busy }),
       async () => {
@@ -851,6 +1161,7 @@ export function createAppController(): AppController {
   }
 
   const handleConfirmQuit = async (): Promise<void> => {
+    resetClosePromptFlow({ hidePrompt: true })
     await runAppAction({
       action: () => systemApi.confirmQuit(),
       errorTitle: 'Close App Failed'
@@ -861,7 +1172,7 @@ export function createAppController(): AppController {
     await runAppAction({
       action: () => systemApi.hideToTray(),
       onSuccess: () => {
-        patchOverlays({ showClosePrompt: false })
+        resetClosePromptFlow({ hidePrompt: true })
       },
       errorTitle: 'Minimize to Tray Failed'
     })
@@ -1044,7 +1355,7 @@ export function createAppController(): AppController {
     } finally {
       try {
         await refreshCore()
-        void refreshProxyStatusSafe()
+        maybeWaitForProxyAutostart()
         await refreshLogs(SYSTEM_LOG_LIMIT)
         bindLogsSubscription(SYSTEM_LOG_LIMIT)
       } catch (error) {
@@ -1110,12 +1421,37 @@ export function createAppController(): AppController {
     )
   }
 
+  const bindRuntimeEvents = (): (() => void) => {
+    return bindAppRuntimeEvents({
+      onSecondInstanceNotice: handleSecondInstanceNotice,
+      onCloseRequested: handleCloseRequested,
+      onWindowRestored: handleWindowRestored,
+      onProxyStateChanged: handleProxyStateChanged,
+      onTrayStateChanged: handleTrayStateChanged
+    })
+  }
+
+  const bindActivityEvents = (): (() => void) => {
+    return bindAppActivityEvents({
+      isDocumentVisible,
+      onVisible: () => {
+        void refreshProxyStatusSilently()
+        void refreshActiveTabSilently()
+      },
+      onFocus: () => {
+        void refreshProxyStatusSilently()
+        void refreshActiveTabSilently()
+      }
+    })
+  }
+
   const appActions: AppActions = {
     setActiveTab: (tabId) => {
       patchShell({ activeTab: tabId })
+      void refreshActiveTabSilently(tabId)
     },
     dismissClosePrompt: () => {
-      patchOverlays({ showClosePrompt: false })
+      resetClosePromptFlow({ hidePrompt: true })
     },
     confirmQuit: handleConfirmQuit,
     hideToTray: handleHideToTray,
@@ -1198,37 +1534,32 @@ export function createAppController(): AppController {
     logsActions,
     settingsActions,
     initialize: async () => {
-      unsubscribeSecondInstance = EventsOn('app:second-instance', handleSecondInstanceNotice)
-      unsubscribeCloseRequested = EventsOn('app:close-requested', handleCloseRequested)
-      unsubscribeWindowRestored = EventsOn('app:window-restored', handleWindowRestored)
-      unsubscribeProxyStateChanged = EventsOn('app:proxy-state-changed', handleProxyStateChanged)
-      unsubscribeTrayStateChanged = EventsOn('app:tray-state-changed', handleTrayStateChanged)
-
-      try {
-        await refreshCore()
-        void refreshProxyStatusSafe()
-        await refreshLogs(SYSTEM_LOG_LIMIT)
-        bindLogsSubscription(SYSTEM_LOG_LIMIT)
-        await checkForUpdates()
-      } catch (error) {
-        notifyError('Initial Load Failed', error)
-      }
+      bootstrapHandle?.dispose()
+      bootstrapHandle = await initializeAppBootstrap({
+        bindRuntimeEvents,
+        bindActivityEvents,
+        startProxyHeartbeat,
+        startActiveTabRefreshLoop,
+        refreshCore: () => refreshCore({ loading: true }),
+        maybeWaitForProxyAutostart,
+        refreshLogs: () => refreshLogs(SYSTEM_LOG_LIMIT),
+        bindLogsSubscription: () => bindLogsSubscription(SYSTEM_LOG_LIMIT),
+        checkForUpdates,
+        onInitializeError: (error) => {
+          notifyError('Initial Load Failed', error)
+        }
+      })
     },
     destroy: () => {
       authController.stop()
       kiroAuthController.stop()
+      bootstrapHandle?.dispose()
+      bootstrapHandle = null
+      stopPolling()
+      cancelProxyAutostartWait()
+      resetClosePromptFlow({ hidePrompt: true })
       unsubscribeLogs?.()
       unsubscribeLogs = null
-      unsubscribeSecondInstance?.()
-      unsubscribeSecondInstance = null
-      unsubscribeCloseRequested?.()
-      unsubscribeCloseRequested = null
-      unsubscribeWindowRestored?.()
-      unsubscribeWindowRestored = null
-      unsubscribeProxyStateChanged?.()
-      unsubscribeProxyStateChanged = null
-      unsubscribeTrayStateChanged?.()
-      unsubscribeTrayStateChanged = null
     }
   }
 }

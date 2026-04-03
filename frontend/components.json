@@ -5,12 +5,12 @@
   "tsx": false,
   "tailwind": {
     "config": "tailwind.config.cjs",
-    "css": "src/style.css",
+    "css": "src/styles/index.css",
     "baseColor": "slate",
     "cssVariables": true
   },
   "aliases": {
-    "components": "src/components",
-    "utils": "src/utils"
+    "components": "src/shared/components",
+    "utils": "src/shared/lib"
   }
 }

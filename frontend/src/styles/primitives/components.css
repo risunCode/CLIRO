@@ -1,0 +1,245 @@
+/* Primitive Component Styles */
+
+/* Component And Feature Styles */
+
+@layer components {
+  .ui-surface-card {
+    @apply rounded-base border border-border bg-surface shadow-soft;
+  }
+
+  .ui-btn-base {
+    @apply inline-flex items-center justify-center rounded-sm border text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .ui-btn-primary {
+    @apply border-border bg-text-primary text-surface hover:opacity-90;
+  }
+
+  .ui-btn-secondary {
+    @apply border-border text-text-secondary hover:bg-app hover:text-text-primary;
+  }
+
+  .ui-btn-ghost {
+    @apply border-transparent text-text-secondary hover:bg-app hover:text-text-primary;
+  }
+
+  .ui-btn-danger {
+    color: #ffffff;
+    border-color: color-mix(in srgb, var(--color-error) 70%, var(--color-border));
+    background-color: var(--color-error);
+  }
+
+  .ui-btn-danger:hover {
+    background-color: color-mix(in srgb, var(--color-error) 88%, #000000);
+  }
+
+  .ui-status-badge {
+    @apply inline-flex items-center rounded-sm px-2 py-1 text-xs font-semibold;
+  }
+
+  .ui-status-badge-neutral {
+    @apply bg-app text-text-secondary;
+  }
+
+  .ui-status-badge-success {
+    color: var(--color-success);
+    background-color: color-mix(in srgb, var(--color-success) 15%, transparent);
+  }
+
+  .ui-status-badge-error {
+    color: var(--color-error);
+    background-color: color-mix(in srgb, var(--color-error) 15%, transparent);
+  }
+
+  .ui-status-badge-info {
+    color: var(--color-info);
+    background-color: color-mix(in srgb, var(--color-info) 15%, transparent);
+  }
+
+  .ui-status-badge-warning {
+    color: var(--color-warning);
+    background-color: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  }
+
+  .ui-icon-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    min-width: 1.75rem;
+    padding: 0;
+    border-width: 1px;
+    border-radius: 6px;
+    border-color: color-mix(in srgb, var(--color-border) 88%, var(--color-text-secondary));
+    background-color: var(--color-surface);
+    color: var(--color-text-secondary);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-surface) 78%, transparent);
+  }
+
+  .ui-icon-btn:hover {
+    border-color: color-mix(in srgb, var(--color-text-secondary) 42%, var(--color-border));
+    background-color: color-mix(in srgb, var(--bg-secondary) 80%, var(--color-surface));
+    color: var(--color-text-primary);
+  }
+
+  .ui-icon-btn-active {
+    border-color: #8b5cf6;
+    color: #6d28d9;
+    background-color: color-mix(in srgb, #8b5cf6 13%, var(--color-surface));
+  }
+
+  .ui-icon-btn-danger {
+    border-color: color-mix(in srgb, var(--color-error) 55%, var(--color-border));
+    color: var(--color-error);
+    background-color: color-mix(in srgb, var(--color-error) 5%, var(--color-surface));
+  }
+
+  .ui-icon-btn-danger:hover {
+    border-color: color-mix(in srgb, var(--color-error) 65%, var(--color-border));
+    background-color: color-mix(in srgb, var(--color-error) 14%, var(--color-surface));
+    color: color-mix(in srgb, var(--color-error) 88%, #000000);
+  }
+
+  .ui-control-input {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .ui-control-input:focus {
+    border-color: color-mix(in srgb, var(--color-text-secondary) 62%, var(--color-border));
+  }
+
+  .ui-control-select {
+    min-height: 2.5rem;
+    padding: 0 0.7rem;
+    font-size: 0.84rem;
+  }
+
+  .ui-control-select-sm {
+    min-height: 2rem;
+    border-radius: 6px;
+    padding: 0 0.55rem;
+    font-size: 12px;
+  }
+
+  .ui-control-textarea {
+    min-height: 12rem;
+    padding: 0.7rem;
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    resize: vertical;
+  }
+
+  .ui-inline-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .ui-panel-soft {
+    --ui-panel-radius: 0.75rem;
+    --ui-panel-bg: color-mix(in srgb, var(--color-app) 72%, transparent);
+    --ui-panel-border-color: var(--color-border);
+
+    border: 1px solid var(--ui-panel-border-color);
+    border-radius: var(--ui-panel-radius);
+    background: var(--ui-panel-bg);
+  }
+
+  .ui-panel-dashed {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--color-border) 92%, var(--color-text-secondary));
+  }
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ========================================================================== */
+/* ================= COMPONENT: TOAST VIEWPORT ============================= */
+/* ========================================================================== */
+
+.toast-viewport .toast-card {
+  color: var(--color-text-primary);
+  border-color: color-mix(in srgb, var(--color-border) 82%, var(--toast-accent) 18%);
+  background-color: color-mix(in srgb, var(--color-surface) 94%, var(--toast-accent) 6%);
+}
+
+.toast-viewport .toast-card[data-type='success'] {
+  --toast-accent: var(--color-success);
+}
+
+.toast-viewport .toast-card[data-type='error'] {
+  --toast-accent: var(--color-error);
+}
+
+.toast-viewport .toast-card[data-type='info'] {
+  --toast-accent: var(--color-info);
+}
+
+.toast-viewport .toast-card[data-type='warning'] {
+  --toast-accent: var(--color-warning);
+}
+
+.toast-viewport .toast-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 3px;
+  background: color-mix(in srgb, var(--toast-accent) 58%, transparent);
+}
+
+.toast-viewport .toast-type {
+  color: color-mix(in srgb, var(--color-text-secondary) 72%, var(--toast-accent) 28%);
+}
+
+.toast-viewport .toast-progress-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.toast-viewport .toast-progress {
+  width: 100%;
+  height: 100%;
+  background: color-mix(in srgb, var(--toast-accent) 38%, transparent);
+  animation: toast-viewport-countdown var(--toast-duration) linear forwards;
+}
+
+/* ========================================================================== */
+/* ================= COMPONENT: TOGGLE SWITCH ============================== */
+/* ========================================================================== */
+
+.ui-toggle-switch .toggle-track-checked {
+  border-color: color-mix(in srgb, var(--accent-primary) 70%, var(--color-border));
+  background-color: color-mix(in srgb, var(--accent-primary) 42%, var(--color-surface));
+}
+
+.ui-toggle-switch .toggle-thumb {
+  background-color: color-mix(in srgb, var(--color-surface) 84%, var(--color-text-primary));
+}
+
+.ui-toggle-switch .toggle-track-checked .toggle-thumb {
+  background-color: color-mix(in srgb, var(--color-bg) 88%, var(--color-surface));
+}
+
+@keyframes toast-viewport-countdown {
+  from {
+    transform: translateX(0%);
+  }
+
+  to {
+    transform: translateX(-100%);
+  }
+}

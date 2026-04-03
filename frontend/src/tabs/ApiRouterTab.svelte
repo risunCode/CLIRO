@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
   import type { RouterActions } from '@/app/services/app-controller'
   import CliSyncPanel from '@/features/router/components/cli-sync/CliSyncPanel.svelte'
   import CloudflaredPanel from '@/features/router/components/cloudflared/CloudflaredPanel.svelte'
@@ -7,62 +6,64 @@
   import ModelAliasPanel from '@/features/router/components/model-alias/ModelAliasPanel.svelte'
   import ProxyControlsPanel from '@/features/router/components/proxy/ProxyControlsPanel.svelte'
   import SchedulingPanel from '@/features/router/components/scheduling/SchedulingPanel.svelte'
+  import { createRouterPanelActions } from '@/features/router/store/router-actions'
+  import { createRouterStoreState } from '@/features/router/store/router-store'
   import type { ProxyStatus } from '@/features/router/types'
 
   export let proxyStatus: ProxyStatus | null = null
   export let busy = false
   export let routerActions: RouterActions
 
-  onMount(() => {
-    void routerActions.refreshProxyStatus().catch(() => {})
-  })
+  $: store = createRouterStoreState({ proxyStatus, busy })
+  $: actions = createRouterPanelActions(routerActions)
 </script>
 
 <div class="space-y-4">
   <ProxyControlsPanel
-    {proxyStatus}
-    {busy}
-    onStartProxy={routerActions.startProxy}
-    onStopProxy={routerActions.stopProxy}
-    onSetProxyPort={routerActions.setProxyPort}
-    onSetAllowLAN={routerActions.setAllowLAN}
-    onSetAutoStartProxy={routerActions.setAutoStartProxy}
-    onSetProxyAPIKey={routerActions.setProxyAPIKey}
-    onRegenerateProxyAPIKey={routerActions.regenerateProxyAPIKey}
-    onSetAuthorizationMode={routerActions.setAuthorizationMode}
+    proxyStatus={store.proxyStatus}
+    busy={store.busy}
+    onStartProxy={actions.startProxy}
+    onStopProxy={actions.stopProxy}
+    onSetProxyPort={actions.setProxyPort}
+    onSetAllowLAN={actions.setAllowLAN}
+    onSetAutoStartProxy={actions.setAutoStartProxy}
+    onSetProxyAPIKey={actions.setProxyAPIKey}
+    onRegenerateProxyAPIKey={actions.regenerateProxyAPIKey}
+    onSetAuthorizationMode={actions.setAuthorizationMode}
   />
 
   <CloudflaredPanel
-    {proxyStatus}
-    {busy}
-    onRefreshCloudflaredStatus={routerActions.refreshCloudflaredStatus}
-    onSetCloudflaredConfig={routerActions.setCloudflaredConfig}
-    onInstallCloudflared={routerActions.installCloudflared}
-    onStartCloudflared={routerActions.startCloudflared}
-    onStopCloudflared={routerActions.stopCloudflared}
+    proxyStatus={store.proxyStatus}
+    busy={store.busy}
+    onRefreshCloudflaredStatus={actions.refreshCloudflaredStatus}
+    onSetCloudflaredConfig={actions.setCloudflaredConfig}
+    onInstallCloudflared={actions.installCloudflared}
+    onStartCloudflared={actions.startCloudflared}
+    onStopCloudflared={actions.stopCloudflared}
   />
 
   <CliSyncPanel
-    {busy}
-    proxyBaseURL={proxyStatus?.url || ''}
-    proxyAPIKey={proxyStatus?.proxyApiKey || ''}
-    onGetCLISyncStatuses={routerActions.getCliSyncStatuses}
-    onGetCLISyncFileContent={routerActions.getCliSyncFileContent}
-    onSaveCLISyncFileContent={routerActions.saveCliSyncFileContent}
-    onSyncCLIConfig={routerActions.syncCLIConfig}
+    busy={store.busy}
+    proxyBaseURL={store.proxyBaseUrl}
+    proxyAPIKey={store.proxyApiKey}
+    onGetCLISyncStatuses={actions.getCliSyncStatuses}
+    onGetEffectiveModelCatalog={actions.getEffectiveModelCatalog}
+    onGetCLISyncFileContent={actions.getCliSyncFileContent}
+    onSaveCLISyncFileContent={actions.saveCliSyncFileContent}
+    onSyncCLIConfig={actions.syncCLIConfig}
   />
 
-  <EndpointTesterPanel proxyStatus={proxyStatus} apiKey={proxyStatus?.proxyApiKey || ''} />
+  <EndpointTesterPanel proxyStatus={store.proxyStatus} apiKey={store.proxyApiKey} onExecuteEndpointTest={actions.executeEndpointTest} />
 
   <ModelAliasPanel
-    {busy}
-    onGetModelAliases={routerActions.getModelAliases}
-    onSetModelAliases={routerActions.setModelAliases}
+    busy={store.busy}
+    onGetModelAliases={actions.getModelAliases}
+    onSetModelAliases={actions.setModelAliases}
   />
 
   <SchedulingPanel
-    {proxyStatus}
-    {busy}
-    onSetSchedulingMode={routerActions.setSchedulingMode}
+    proxyStatus={store.proxyStatus}
+    busy={store.busy}
+    onSetSchedulingMode={actions.setSchedulingMode}
   />
 </div>

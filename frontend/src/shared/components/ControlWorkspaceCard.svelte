@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
   import { cn } from '@/shared/lib/cn'
+  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
 
   type AccentTone = 'amber' | 'cyan' | 'emerald' | 'rose' | 'slate'
 

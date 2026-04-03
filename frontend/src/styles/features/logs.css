@@ -1,0 +1,328 @@
+/* Logs Feature Styles */
+
+/* ========================================================================== */
+/* ================= TAB: SYSTEM LOGS ================= */
+/* ========================================================================== */
+
+.system-logs-tab .logs-filters {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.system-logs-tab .logs-filters > * {
+  min-width: 0;
+}
+
+.system-logs-tab .filter-label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.system-logs-tab .filter-label span {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.system-logs-tab .filter-select {
+  width: 100%;
+  background: var(--color-app);
+}
+
+.system-logs-tab .filter-select option {
+  color: #111827;
+  background: #ffffff;
+}
+
+.system-logs-tab .logs-viewport {
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-gutter: stable both-edges;
+  min-height: 16rem;
+  max-height: clamp(16rem, calc(100vh - 22.5rem), 36rem);
+  max-height: clamp(16rem, calc(100dvh - 22.5rem), 36rem);
+  overflow: auto;
+}
+
+.system-logs-tab .system-logs-table-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.system-logs-tab .logs-table {
+  min-width: 60rem;
+}
+
+.system-logs-tab .logs-grid {
+  display: grid;
+  grid-template-columns: 5.5rem 8rem 12rem minmax(24rem, 1fr) 4.5rem;
+  gap: 0.5rem;
+}
+
+.system-logs-tab .logs-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.system-logs-tab .logs-head-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.system-logs-tab .logs-head-sort {
+  font-size: 0.8em;
+  opacity: 0.9;
+}
+
+.system-logs-tab .log-row {
+  display: grid;
+  grid-template-columns: 5.5rem 8rem 12rem minmax(24rem, 1fr) 4.5rem;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.48rem 0.75rem;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: background-color 0.16s ease;
+  background: color-mix(in srgb, var(--color-app) 92%, transparent);
+}
+
+.system-logs-tab .log-row:hover {
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+}
+
+.system-logs-tab .log-row-error {
+  background: color-mix(in srgb, var(--color-error) 6%, var(--color-app));
+}
+
+.system-logs-tab .log-row-warning {
+  background: color-mix(in srgb, var(--color-warning) 6%, var(--color-app));
+}
+
+.system-logs-tab .log-level-cell {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+
+.system-logs-tab .log-time,
+.system-logs-tab .log-detail {
+  margin: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+.system-logs-tab .log-source,
+.system-logs-tab .log-account,
+.system-logs-tab .log-time {
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-logs-tab .log-source {
+  margin: 0;
+  text-transform: lowercase;
+}
+
+.system-logs-tab .log-account {
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.system-logs-tab .log-account.is-empty {
+  color: var(--color-text-secondary);
+}
+
+.system-logs-tab .log-detail-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.system-logs-tab .log-detail {
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-logs-tab .log-detail.is-expanded {
+  white-space: normal;
+  text-overflow: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+.system-logs-tab .log-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.system-logs-tab .log-time {
+  margin: 0;
+  text-align: right;
+}
+
+.system-logs-tab .logs-head-btn-time {
+  justify-content: flex-end;
+}
+
+.system-logs-tab .log-badge {
+  align-self: center;
+  justify-self: start;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  min-height: 1.3rem;
+  padding: 0.2rem 0.45rem;
+  min-width: 4.6rem;
+  justify-content: center;
+}
+
+.system-logs-tab .log-message-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--accent-primary);
+  cursor: pointer;
+}
+
+.system-logs-tab .log-message-link:hover {
+  text-decoration: underline;
+}
+
+.system-logs-tab .log-message-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.system-logs-tab .scope-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.system-logs-tab .scope-chip {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-app);
+  color: var(--color-text-secondary);
+  padding: 0.17rem 0.55rem;
+  font-size: 10px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.15s ease;
+}
+
+.system-logs-tab .scope-chip:hover {
+  border-color: color-mix(in srgb, var(--color-text-secondary) 42%, var(--color-border));
+  color: var(--color-text-primary);
+}
+
+.system-logs-tab .scope-chip.is-active {
+  border-color: color-mix(in srgb, var(--accent-primary) 58%, var(--color-border));
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--color-app));
+  color: color-mix(in srgb, var(--accent-primary) 82%, var(--color-text-primary));
+}
+
+.system-logs-tab .scope-chip.is-muted {
+  opacity: 0.75;
+}
+
+.system-logs-tab .system-logs-spinning {
+  animation: system-logs-spin 1s linear infinite;
+}
+
+.system-logs-tab .log-message-empty,
+.system-logs-tab .log-request-id,
+.system-logs-tab .log-event,
+.system-logs-tab .log-fields-wrap,
+.system-logs-tab .log-field-pill,
+.system-logs-tab .log-field-more,
+.system-logs-tab .log-message-actions {
+  display: none;
+}
+
+.system-logs-tab .log-request-id {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 760px) {
+  .system-logs-tab .logs-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 12rem) minmax(10rem, 12rem);
+  }
+
+  .system-logs-tab .scope-filter,
+  .system-logs-tab .sort-direction-toggle {
+    grid-column: 1 / -1;
+  }
+
+  .system-logs-tab .sort-direction-toggle {
+    justify-self: start;
+  }
+}
+
+@media (min-width: 1080px) {
+  .system-logs-tab .logs-filters {
+    grid-template-columns: minmax(0, 1fr) 9.5rem 11rem 10rem auto;
+    align-items: end;
+  }
+
+  .system-logs-tab .scope-filter,
+  .system-logs-tab .sort-direction-toggle {
+    grid-column: auto;
+  }
+
+  .system-logs-tab .sort-direction-toggle {
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 960px) {
+  .system-logs-tab .logs-table {
+    min-width: 54rem;
+  }
+
+  .system-logs-tab .logs-grid,
+  .system-logs-tab .log-row {
+    grid-template-columns: 5rem 7rem 9rem minmax(18rem, 1fr) 4rem;
+  }
+
+  .system-logs-tab .logs-viewport {
+    max-height: clamp(14rem, calc(100vh - 23.5rem), 32rem);
+    max-height: clamp(14rem, calc(100dvh - 23.5rem), 32rem);
+  }
+}
+
+@keyframes system-logs-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

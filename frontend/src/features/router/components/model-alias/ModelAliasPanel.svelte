@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { ArrowRightLeft, Plus, Trash2 } from 'lucide-svelte'
-  import Button from '@/components/common/Button.svelte'
-  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
+  import Button from '@/shared/components/Button.svelte'
+  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
   import { aliasRowsFromRecord, cloneAliasRows, createEmptyAliasRow, serializeAliasRows, type AliasFormRow } from '@/features/router/lib/alias-form'
 
   export let busy = false
@@ -15,20 +15,20 @@
   let loading = false
   let error = ''
   let dirty = false
-  let loadRequestID = 0
+  let loadRequestId = 0
 
   onMount(() => {
     void loadAliases().catch(() => {})
   })
 
   const loadAliases = async (): Promise<void> => {
-    const requestID = ++loadRequestID
+    const requestId = ++loadRequestId
     loading = true
     error = ''
 
     try {
       const rows = aliasRowsFromRecord(await onGetModelAliases())
-      if (requestID !== loadRequestID) {
+      if (requestId !== loadRequestId) {
         return
       }
       savedAliases = cloneAliasRows(rows)
@@ -36,12 +36,12 @@
         aliases = cloneAliasRows(rows)
       }
     } catch (loadError) {
-      if (requestID !== loadRequestID) {
+      if (requestId !== loadRequestId) {
         return
       }
       error = loadError instanceof Error ? loadError.message : 'Failed to load model aliases'
     } finally {
-      if (requestID === loadRequestID) {
+      if (requestId === loadRequestId) {
         loading = false
       }
     }
@@ -174,7 +174,7 @@
   .loading-state {
     padding: 1rem;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     font-size: 0.875rem;
   }
 
@@ -193,10 +193,10 @@
   .alias-input {
     flex: 1;
     padding: 0.5rem 0.75rem;
-    background: var(--surface-secondary);
-    border: 1px solid var(--border-primary);
+    background: color-mix(in srgb, var(--color-surface) 86%, var(--color-app));
+    border: 1px solid var(--color-border);
     border-radius: 6px;
-    color: var(--text-primary);
+    color: var(--color-text-primary);
     font-size: 0.875rem;
     font-family: 'JetBrains Mono', monospace;
     transition: border-color 0.2s;
@@ -204,7 +204,7 @@
 
   .alias-input:focus {
     outline: none;
-    border-color: var(--accent-primary);
+    border-color: var(--color-accent-primary);
   }
 
   .alias-input:disabled {
@@ -213,11 +213,11 @@
   }
 
   .alias-input::placeholder {
-    color: var(--text-tertiary);
+    color: var(--color-text-muted);
   }
 
   .arrow {
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     font-size: 1.25rem;
     flex-shrink: 0;
   }
@@ -225,9 +225,9 @@
   .remove-btn {
     padding: 0.5rem;
     background: transparent;
-    border: 1px solid var(--border-primary);
+    border: 1px solid var(--color-border);
     border-radius: 6px;
-    color: var(--text-secondary);
+    color: var(--color-text-secondary);
     cursor: pointer;
     transition: all 0.2s;
     display: flex;
@@ -236,9 +236,9 @@
   }
 
   .remove-btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--error);
-    color: var(--error);
+    background: color-mix(in srgb, var(--color-surface-hover) 82%, var(--color-app));
+    border-color: var(--color-error);
+    color: var(--color-error);
   }
 
   .remove-btn:disabled {
@@ -261,10 +261,10 @@
 
   .error-message {
     padding: 0.75rem;
-    background: var(--error-bg);
-    border: 1px solid var(--error);
+    background: color-mix(in srgb, var(--color-error) 10%, var(--color-app));
+    border: 1px solid color-mix(in srgb, var(--color-error) 45%, var(--color-border));
     border-radius: 6px;
-    color: var(--error);
+    color: var(--color-error);
     font-size: 0.875rem;
   }
 </style>

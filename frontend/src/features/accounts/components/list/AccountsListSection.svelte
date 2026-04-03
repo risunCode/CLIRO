@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { Search, Upload } from 'lucide-svelte'
-  import Button from '@/components/common/Button.svelte'
+  import Button from '@/shared/components/Button.svelte'
   import AccountsGrid from './AccountsGrid.svelte'
   import AccountsTable from './AccountsTable.svelte'
   import AccountsToolbar from './AccountsToolbar.svelte'
