@@ -1,7 +1,0 @@
-/* Compatibility import. Prefer src/styles/index.css. */
-@import './primitives/components.css';
-@import './features/accounts.css';
-@import './features/router.css';
-@import './features/logs.css';
-@import './features/usage.css';
-@import './features/settings.css';

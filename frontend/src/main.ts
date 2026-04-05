@@ -1,6 +1,6 @@
 import './styles/index.css'
 import App from '@/App.svelte'
-import { getErrorMessage } from '@/shared/lib/error'
+import { getErrorMessage } from '@/shared/utils/error'
 import { toastStore } from '@/shared/stores/toast'
 
 let lastGlobalErrorSignature = ''

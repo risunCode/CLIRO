@@ -1,15 +1,15 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte'
   import { Eye, EyeOff } from 'lucide-svelte'
-  import BaseModal from '@/shared/components/BaseModal.svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import ModalWindowHeader from '@/shared/components/ModalWindowHeader.svelte'
+  import BaseModal from '@/components/common/BaseModal.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import ModalWindowHeader from '@/components/common/ModalWindowHeader.svelte'
   import CredentialField from './CredentialField.svelte'
-  import StatusBadge from '@/shared/components/StatusBadge.svelte'
+  import StatusBadge from '@/components/common/StatusBadge.svelte'
   import type { Account } from '@/features/accounts/types'
-  import { formatNumber, formatUnixSeconds } from '@/shared/lib/formatters'
-  import { formatRelativeReset, getNearestFutureResetAt, getQuotaTone } from '@/features/accounts/lib/account-quota'
-  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/lib/browser'
+  import { formatNumber, formatUnixSeconds } from '@/shared/utils/formatters'
+  import { formatRelativeReset, getNearestFutureResetAt, getQuotaTone } from '@/features/accounts/utils/account-quota'
+  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/utils/browser'
 
   export let open = false
   export let account: Account | null = null

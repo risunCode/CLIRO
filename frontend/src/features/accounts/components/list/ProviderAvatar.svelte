@@ -1,7 +1,7 @@
 <script lang="ts">
   import codexIcon from '@/assets/icons/codex-icon.png'
   import kiroIcon from '@/assets/icons/kiro-icon.png'
-  import { normalizeProviderID, providerMeta } from '@/features/accounts/lib/account'
+  import { normalizeProviderID, providerMeta } from '@/features/accounts/utils/account'
 
   export let provider = ''
   export let variant: 'icon' | 'chip' = 'icon'

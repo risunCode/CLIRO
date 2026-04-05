@@ -1,5 +1,5 @@
 import type { LogEntry } from '@/app/types'
-import { subscribeRuntimeEvent } from '@/shared/api/runtime/events'
+import { subscribeRuntimeEvent } from '@/backend/client/runtime-events'
 
 const appendLogEntryWithLimit = (entries: LogEntry[], entry: LogEntry, limit = 500): LogEntry[] => {
   return [...entries, entry].slice(-limit)

@@ -137,6 +137,27 @@ func (m *Manager) MarkAccountDurablyDisabled(id string, reason string) error {
 	})
 }
 
+// MarkAccountReloginRequired downgrades the account to a short transient
+// cooldown and records a re-login required reason. Both codex and kiro auth
+// services call this after detecting a refreshable auth error.
+func (m *Manager) MarkAccountReloginRequired(id string, message string) error {
+	now := time.Now().Unix()
+	return m.UpdateAccount(id, func(a *Account) {
+		a.HealthState = AccountHealthCooldownTransient
+		a.HealthReason = "Need re-login"
+		a.CooldownUntil = now + int64((30*time.Second)/time.Second)
+		a.LastFailureAt = now
+		a.LastError = message
+		a.Quota = QuotaInfo{
+			Status:        "unknown",
+			Summary:       "Authentication required",
+			Source:        "runtime",
+			Error:         message,
+			LastCheckedAt: now,
+		}
+	})
+}
+
 func (m *Manager) ClearTransientCooldown(id string) error {
 	now := time.Now().Unix()
 	m.mu.Lock()

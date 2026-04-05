@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { ChevronDown, ChevronUp, Copy, Network, Play } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
-  import StatusBadge from '@/shared/components/StatusBadge.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
+  import StatusBadge from '@/components/common/StatusBadge.svelte'
   import type { EndpointTestRequest, EndpointTestResult, ProxyStatus } from '@/features/router/types'
-  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/lib/browser'
-  import { ENDPOINT_PRESETS, buildTesterStructuredResponse, getEndpointPreset, getEndpointRequestBody, type EndpointPreset, type TesterStructuredResponse } from '@/features/router/lib/endpoint-tester'
+  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/utils/browser'
+  import { ENDPOINT_PRESETS, buildTesterStructuredResponse, getEndpointPreset, getEndpointRequestBody, type EndpointPreset, type TesterStructuredResponse } from '@/features/router/utils/endpoint-tester'
 
   export let proxyStatus: ProxyStatus | null = null
   export let apiKey = ''

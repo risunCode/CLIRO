@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"cliro-go/internal/provider"
 )
 
 const quotaBaseURL = "https://codewhisperer.us-east-1.amazonaws.com"
@@ -41,7 +43,7 @@ func (s *Service) fetchProfile(ctx context.Context, accessToken string) (string,
 		return "", "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("kiro profile fetch failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return "", "", fmt.Errorf("kiro profile fetch failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var data struct {
@@ -72,7 +74,7 @@ func (s *Service) fetchUserEmailWithToken(ctx context.Context, accessToken strin
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("kiro GetUserInfo failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return "", fmt.Errorf("kiro GetUserInfo failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var data struct {
@@ -82,15 +84,4 @@ func (s *Service) fetchUserEmailWithToken(ctx context.Context, accessToken strin
 		return "", err
 	}
 	return strings.TrimSpace(data.Email), nil
-}
-
-func compactHTTPBody(body []byte) string {
-	trimmed := strings.TrimSpace(string(body))
-	if trimmed == "" {
-		return "empty response"
-	}
-	if len(trimmed) > 180 {
-		return trimmed[:180] + "..."
-	}
-	return trimmed
 }

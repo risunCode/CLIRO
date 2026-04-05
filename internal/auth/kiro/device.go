@@ -2,7 +2,6 @@ package kiro
 
 import (
 	"bytes"
-	"cliro-go/internal/util"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"cliro-go/internal/provider"
+	"cliro-go/internal/util"
 
 	"github.com/google/uuid"
 )
@@ -44,7 +46,7 @@ func (s *Service) registerClient(ctx context.Context) (*ClientRegistrationRespon
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("kiro client registration failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return nil, fmt.Errorf("kiro client registration failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var parsed ClientRegistrationResponse
@@ -85,7 +87,7 @@ func (s *Service) startDeviceAuthorization(ctx context.Context, clientID, client
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("kiro device authorization failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return nil, fmt.Errorf("kiro device authorization failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var parsed DeviceAuthorizationResponse
@@ -148,7 +150,7 @@ func (s *Service) pollDeviceToken(ctx context.Context, clientID, clientSecret, d
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				return nil, err
 			}
-			return nil, fmt.Errorf("kiro device token request failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+			return nil, fmt.Errorf("kiro device token request failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 || strings.TrimSpace(parsed.Error) != "" {
@@ -166,7 +168,7 @@ func (s *Service) pollDeviceToken(ctx context.Context, clientID, clientSecret, d
 
 			message := strings.TrimSpace(parsed.ErrorDescription)
 			if message == "" {
-				message = compactHTTPBody(respBody)
+				message = provider.CompactHTTPBody(respBody)
 			}
 			return nil, fmt.Errorf("kiro device token request failed (%d): %s", resp.StatusCode, message)
 		}
@@ -229,7 +231,7 @@ func (s *Service) refreshTokens(ctx context.Context, clientID, clientSecret, ref
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("kiro token refresh failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return nil, fmt.Errorf("kiro token refresh failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var parsed DeviceTokenResponse

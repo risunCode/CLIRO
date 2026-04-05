@@ -1,11 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { Copy, Save } from 'lucide-svelte'
-  import BaseModal from '@/shared/components/BaseModal.svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import ModalWindowHeader from '@/shared/components/ModalWindowHeader.svelte'
+  import BaseModal from '@/components/common/BaseModal.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import ModalWindowHeader from '@/components/common/ModalWindowHeader.svelte'
   import type { CliSyncAppID, CliSyncResult, CliSyncStatus, LocalModelCatalogItem } from '@/features/router/types'
-  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/lib/browser'
+  import { copyTextToClipboard, hasClipboardWrite } from '@/shared/utils/browser'
 
   export let open = false
   export let appID: CliSyncAppID | '' = ''

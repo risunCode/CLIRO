@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AppState } from '@/app/types'
   import type { ProxyStatus } from '@/features/router/types'
-  import { openBrowserURL } from '@/shared/api/runtime/browser'
+  import { openBrowserURL } from '@/backend/client/browser'
 
   const repoURL = 'https://github.com/risunCode/Cliro-Go'
   export let proxyStatus: ProxyStatus | null = null

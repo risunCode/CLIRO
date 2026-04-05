@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { Ban, Gauge, Server, Users } from 'lucide-svelte'
-  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
-  import StatusBadge from '@/shared/components/StatusBadge.svelte'
-  import { systemApi } from '@/app/api/system-api'
+  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
+  import StatusBadge from '@/components/common/StatusBadge.svelte'
+  import { systemApi } from '@/backend/gateways/system-gateway'
   import type { AppState } from '@/app/types'
   import type { Account } from '@/features/accounts/types'
   import type { ProxyStatus } from '@/features/router/types'
-  import { deriveQuotaDisplayStatus } from '@/features/accounts/lib/account-quota'
-  import { formatNumber, formatUnixSeconds } from '@/shared/lib/formatters'
+  import { deriveQuotaDisplayStatus } from '@/features/accounts/utils/account-quota'
+  import { formatNumber, formatUnixSeconds } from '@/shared/utils/formatters'
 
   type DashboardBadgeTone = 'neutral' | 'success' | 'error' | 'info' | 'warning'
 

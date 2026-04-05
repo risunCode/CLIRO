@@ -1,5 +1,5 @@
 import type { RouterActions } from '@/app/services/app-controller'
-import { routerApi } from '@/features/router/api/router-api'
+import { routerApi } from '@/backend/gateways/router-gateway'
 import type { EndpointTestRequest, EndpointTestResult, LocalModelCatalogItem } from '@/features/router/types'
 
 export interface RouterPanelActions extends RouterActions {

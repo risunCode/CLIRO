@@ -1,4 +1,4 @@
-import type { WailsAccount, WailsCodexAuthSessionView } from '@/shared/api/wails/models'
+import type { WailsAccount, WailsCodexAuthSessionView } from '@/backend/models/wails'
 
 export type Account = WailsAccount & {
   banned?: boolean

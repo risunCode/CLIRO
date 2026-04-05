@@ -1,5 +1,5 @@
 import type { AppActions, AppShellState, AccountsActions, LogsActions, RouterActions, SettingsActions } from '@/app/services/app-controller'
-import type { AppTabId } from '@/app/lib/tabs'
+import type { AppTabId } from '@/app/utils/tabs'
 import AccountsTab from '@/tabs/AccountsTab.svelte'
 import DashboardTab from '@/tabs/DashboardTab.svelte'
 
@@ -96,7 +96,7 @@ export const APP_ROUTES: AppRoutesByTab = {
   settings: {
     id: 'settings',
     loadingLabel: 'Loading settings...',
-    load: async () => (await import('@/features/settings/containers/SettingsScreen.svelte')).default,
+    load: async () => (await import('@/features/settings/components/SettingsScreen.svelte')).default,
     buildProps: ({ settingsActions }) => ({
       settingsActions
     })

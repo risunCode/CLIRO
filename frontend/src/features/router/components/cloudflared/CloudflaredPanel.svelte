@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { Cloud, Copy, RefreshCw } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
-  import ToggleSwitch from '@/shared/components/ToggleSwitch.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
+  import ToggleSwitch from '@/components/common/ToggleSwitch.svelte'
   import type { ProxyStatus } from '@/features/router/types'
-  import { copyTextToClipboard } from '@/shared/lib/browser'
-  import { CLOUDFLARED_MODE_CARDS, type CloudflaredMode } from '@/features/router/lib/cloudflared'
+  import { copyTextToClipboard } from '@/shared/utils/browser'
+  import { CLOUDFLARED_MODE_CARDS, type CloudflaredMode } from '@/features/router/utils/cloudflared'
 
   export let proxyStatus: ProxyStatus | null = null
   export let busy = false

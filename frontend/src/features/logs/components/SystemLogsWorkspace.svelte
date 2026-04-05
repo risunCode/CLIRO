@@ -2,9 +2,9 @@
   import { onDestroy } from 'svelte'
   import { Copy, Download, RefreshCw, Search, Trash2 } from 'lucide-svelte'
   import type { LogEntry } from '@/app/types'
-  import Button from '@/shared/components/Button.svelte'
-  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
-  import StatusBadge from '@/shared/components/StatusBadge.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
+  import StatusBadge from '@/components/common/StatusBadge.svelte'
   import {
     LOG_TABLE_MAX_ENTRIES,
     buildExportPayload,
@@ -30,9 +30,9 @@
     type LevelFilter,
     type SortDirection,
     type SortField
-  } from '@/features/logs/lib/logs-view'
-  import { formatDateTime, formatNumber } from '@/shared/lib/formatters'
-  import { copyTextToClipboard, downloadJSONFile, hasClipboardWrite } from '@/shared/lib/browser'
+  } from '@/features/logs/utils/logs-view'
+  import { formatDateTime, formatNumber } from '@/shared/utils/formatters'
+  import { copyTextToClipboard, downloadJSONFile, hasClipboardWrite } from '@/shared/utils/browser'
 
   export let logs: LogEntry[] = []
   export let loading = false

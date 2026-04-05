@@ -5,11 +5,11 @@
   import cliroIcon from '@/assets/icons/cliro-icon.png'
   import kiroIcon from '@/assets/icons/kiro-icon.png'
   import type { AppState, LogEntry } from '@/app/types'
-  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
-  import StatusBadge from '@/shared/components/StatusBadge.svelte'
+  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
+  import StatusBadge from '@/components/common/StatusBadge.svelte'
   import type { Account } from '@/features/accounts/types'
   import type { ProxyStatus } from '@/features/router/types'
-  import { formatNumber } from '@/shared/lib/formatters'
+  import { formatNumber } from '@/shared/utils/formatters'
   import {
     formatRelativeTime,
     getEnabledAccountCount,
@@ -20,7 +20,7 @@
     isProviderActive,
     providerLabel,
     type UsageProvider
-  } from '@/features/usage/lib/request-log'
+  } from '@/features/usage/utils/request-log'
 
   interface ProviderNode {
     id: UsageProvider

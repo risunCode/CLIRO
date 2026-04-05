@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Database, FolderOpen } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
 
   export let busy = false
   export let dataDirPath = '~/.cliro-go'

@@ -281,24 +281,10 @@ func (s *Service) RefreshAccount(account config.Account, force bool) (config.Acc
 
 	tokens, err := s.refreshTokens(context.Background(), account.ClientID, account.ClientSecret, account.RefreshToken)
 	if err != nil {
-		if blockedMsg, blocked := blockedAccountMessageFromAuthError(err); blocked {
+		if blockedMsg, blocked := config.BlockedAccountReason(err.Error()); blocked {
 			_ = s.store.MarkAccountBanned(account.ID, blockedMsg)
 		} else if reloginMessage, refreshable := config.RefreshableAuthReason(err.Error()); refreshable {
-			now := time.Now().Unix()
-			_ = s.store.UpdateAccount(account.ID, func(a *config.Account) {
-				a.HealthState = config.AccountHealthCooldownTransient
-				a.HealthReason = "Need re-login"
-				a.CooldownUntil = now + int64((30*time.Second)/time.Second)
-				a.LastFailureAt = now
-				a.LastError = reloginMessage
-				a.Quota = config.QuotaInfo{
-					Status:        "unknown",
-					Summary:       "Authentication required",
-					Source:        "runtime",
-					Error:         reloginMessage,
-					LastCheckedAt: now,
-				}
-			})
+			_ = s.store.MarkAccountReloginRequired(account.ID, reloginMessage)
 			if updated, ok := s.store.GetAccount(account.ID); ok {
 				account = updated
 			}
@@ -610,13 +596,6 @@ func (s *Service) client() *http.Client {
 		}
 	}
 	return &http.Client{Timeout: 60 * time.Second}
-}
-
-func blockedAccountMessageFromAuthError(err error) (string, bool) {
-	if err == nil {
-		return "", false
-	}
-	return config.BlockedAccountReason(err.Error())
 }
 
 func looksLikeSocialRefreshToken(refreshToken string) bool {

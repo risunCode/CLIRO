@@ -9,8 +9,8 @@
     getPercentColor,
     metricPercent,
     quotaStatusLabel
-  } from '@/features/accounts/lib/account-quota'
-  import { presentAccount } from '@/features/accounts/lib/presenter'
+  } from '@/features/accounts/utils/account-quota'
+  import { presentAccount } from '@/features/accounts/utils/presenter'
 
 export let account: Account
 export let selected = false

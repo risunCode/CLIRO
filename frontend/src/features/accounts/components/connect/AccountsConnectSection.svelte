@@ -2,8 +2,8 @@
   import { Link2 } from 'lucide-svelte'
   import codexIcon from '@/assets/icons/codex-icon.png'
   import kiroIcon from '@/assets/icons/kiro-icon.png'
-  import Button from '@/shared/components/Button.svelte'
-  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
 
   export let open = false
   export let authWorking = false

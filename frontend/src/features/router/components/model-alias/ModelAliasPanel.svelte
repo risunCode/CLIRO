@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { ArrowRightLeft, Plus, Trash2 } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
-  import { aliasRowsFromRecord, cloneAliasRows, createEmptyAliasRow, serializeAliasRows, type AliasFormRow } from '@/features/router/lib/alias-form'
+  import Button from '@/components/common/Button.svelte'
+  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
+  import { aliasRowsFromRecord, cloneAliasRows, createEmptyAliasRow, serializeAliasRows, type AliasFormRow } from '@/features/router/utils/alias-form'
 
   export let busy = false
   export let onGetModelAliases: () => Promise<Record<string, string>>

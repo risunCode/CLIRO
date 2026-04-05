@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Check, Copy } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
+  import Button from '@/components/common/Button.svelte'
 
   export let label = ''
   export let value = ''

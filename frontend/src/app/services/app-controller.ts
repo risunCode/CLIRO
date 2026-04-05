@@ -1,15 +1,15 @@
 import { get, writable, type Readable } from 'svelte/store'
-import { logsApi } from '@/app/api/logs-api'
-import { systemApi } from '@/app/api/system-api'
+import { logsApi } from '@/backend/gateways/logs-gateway'
+import { systemApi } from '@/backend/gateways/system-gateway'
 import { initializeAppBootstrap, type AppBootstrapHandle } from '@/app/bootstrap/app-bootstrap'
 import { bindAppActivityEvents, bindAppRuntimeEvents } from '@/app/bootstrap/app-events'
-import type { AppTabId } from '@/app/lib/tabs'
+import type { AppTabId } from '@/app/utils/tabs'
 import { subscribeToRingLogs } from '@/app/services/logs-subscription'
 import { mapStartupWarnings, type StartupWarningEntry } from '@/app/services/startup-warnings'
 import type { AppState, LogEntry, UpdateInfo } from '@/app/types'
-import { accountsApi } from '@/features/accounts/api/accounts-api'
-import { accountsAuthApi } from '@/features/accounts/api/auth-api'
-import { createAuthSessionController } from '@/features/accounts/lib/auth-session'
+import { accountsApi } from '@/backend/gateways/accounts-gateway'
+import { accountsAuthApi } from '@/backend/gateways/auth-gateway'
+import { createAuthSessionController } from '@/features/accounts/utils/auth-session'
 import type {
   Account,
   AuthSession,
@@ -18,7 +18,7 @@ import type {
   KiroAuthSession,
   OpencodeAuthSyncResult
 } from '@/features/accounts/types'
-import { routerApi } from '@/features/router/api/router-api'
+import { routerApi } from '@/backend/gateways/router-gateway'
 import type { CliSyncAppID, CliSyncResult, ProxyStatus } from '@/features/router/types'
 import {
   assertBackupPayloadRestorable,
@@ -26,9 +26,9 @@ import {
   validateBackupPayload,
   type BackupPayload,
   type RestoreProgress
-} from '@/features/settings/lib/backup'
-import { downloadJSONFile } from '@/shared/lib/browser'
-import { getErrorMessage } from '@/shared/lib/error'
+} from '@/features/settings/utils/backup'
+import { downloadJSONFile } from '@/shared/utils/browser'
+import { getErrorMessage } from '@/shared/utils/error'
 import { toastStore } from '@/shared/stores/toast'
 
 const SYSTEM_LOG_LIMIT = 500

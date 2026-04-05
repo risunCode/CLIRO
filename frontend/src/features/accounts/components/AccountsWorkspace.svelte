@@ -3,15 +3,15 @@
   import AccountsListSection from '@/features/accounts/components/list/AccountsListSection.svelte'
   import AccountsWorkspaceModals from '@/features/accounts/components/modals/AccountsWorkspaceModals.svelte'
   import { toastStore } from '@/shared/stores/toast'
-  import { getErrorMessage } from '@/shared/lib/error'
+  import { getErrorMessage } from '@/shared/utils/error'
   import {
     computeAccountsViewState,
     isPendingAuthSession,
     sanitizeSelectedIDs,
     shouldAttachPendingSession,
     shouldDismissPromptAfterSuccess
-  } from '@/features/accounts/lib/workspace'
-  import { loadAccountsPreferences, saveAccountsPreferences } from '@/features/accounts/lib/preferences'
+  } from '@/features/accounts/utils/workspace'
+  import { loadAccountsPreferences, saveAccountsPreferences } from '@/features/accounts/utils/preferences'
   import {
     buildAccountExportFileName,
     createInitialWorkspaceState,
@@ -19,8 +19,8 @@
     getBannedAccountIDs,
     isBannedAccount,
     readImportedAccountsFile
-  } from '@/features/accounts/lib/workspace-controller'
-  import { runAccountSyncByTarget, syncTargetName } from '@/features/accounts/lib/sync'
+  } from '@/features/accounts/utils/workspace-controller'
+  import { runAccountSyncByTarget, syncTargetName } from '@/features/accounts/utils/sync'
   import type {
     Account,
     AuthSession,
@@ -31,9 +31,9 @@
     OpencodeAuthSyncResult,
     SyncTargetID
   } from '@/features/accounts/types'
-  import { formatNumber } from '@/shared/lib/formatters'
-  import { copyTextToClipboard, downloadJSONFile, hasClipboardWrite } from '@/shared/lib/browser'
-  import { toggleSelectAllVisible, toggleSelectedID } from '@/features/accounts/lib/account'
+  import { formatNumber } from '@/shared/utils/formatters'
+  import { copyTextToClipboard, downloadJSONFile, hasClipboardWrite } from '@/shared/utils/browser'
+  import { toggleSelectAllVisible, toggleSelectedID } from '@/features/accounts/utils/account'
 
   export let accounts: Account[] = []
   export let busyAccountIds: string[] = []

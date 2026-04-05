@@ -1,5 +1,5 @@
 import type { AppActions, AccountsActions } from '@/app/services/app-controller'
-import { accountsAuthApi } from '@/features/accounts/api/auth-api'
+import { accountsAuthApi } from '@/backend/gateways/auth-gateway'
 
 export interface AccountsScreenActions extends AccountsActions {
   openExternalURL: (url: string) => Promise<void>

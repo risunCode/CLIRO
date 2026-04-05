@@ -1,6 +1,6 @@
 # CLIro-Go Frontend
 
-Frontend shell for the Wails desktop app. Built with Svelte + TypeScript + Vite, and wired to the Go backend through generated Wails bindings plus shared frontend gateway adapters.
+Frontend shell for the Wails desktop app. Built with Svelte + TypeScript + Vite, and wired to the Go backend through generated Wails bindings behind a clean `backend/` boundary layer.
 
 ## Stack
 
@@ -11,11 +11,17 @@ Frontend shell for the Wails desktop app. Built with Svelte + TypeScript + Vite,
 
 ## Architecture Summary
 
-- App orchestration and shell live under `src/app/`.
-- Feature modules live under `src/features/` and own their UI/state helpers.
-- Cross-feature APIs, adapters, components, and utilities live under `src/shared/`.
-- Top-level tab wrappers remain in `src/tabs/` for transitional route composition.
-- Styles are organized in `src/styles/` with `src/styles/index.css` as the single stylesheet entrypoint.
+All backend access is centralized in `src/backend/` — feature UI and app shell never import from `wailsjs` directly.
+
+- `src/backend/` — all backend access, split into four sub-boundaries
+- `src/app/` — shell, bootstrap, routes/tabs, overlays, services, lib
+- `src/features/` — per-feature UI, state, lib; each exposes a public `index.ts`
+- `src/components/common/` — primitive reusable UI, domain-neutral
+- `src/shared/` — cross-feature utilities, global stores, shared lib
+- `src/styles/` — stylesheet entrypoint and design tokens
+- `src/tabs/` — top-level tab wrappers for route composition
+
+`src-old/` is a read-only reference of the previous structure and is **not imported** by active source.
 
 ## Key Folders
 
@@ -23,23 +29,28 @@ Frontend shell for the Wails desktop app. Built with Svelte + TypeScript + Vite,
 src/
   App.svelte
   main.ts
+  backend/
+    client/       # wails-client, runtime-events, browser (low-level only)
+    compat/       # coerce, accounts-compat, router-compat (payload mappers)
+    models/       # wails type aliases
+    gateways/     # system-, logs-, accounts-, auth-, router-gateway + index.ts
   app/
-    api/
     bootstrap/
     modals/
     overlays/
     routes/
     services/
     shell/
+    lib/
   features/
-    accounts/
-    logs/
-    router/
-    settings/
-    usage/
+    accounts/     # index.ts public surface
+    logs/         # index.ts public surface
+    router/       # index.ts public surface
+    settings/     # index.ts public surface
+    usage/        # index.ts public surface
+  components/
+    common/       # Button, BaseModal, ToggleSwitch, StatusBadge, ...
   shared/
-    api/
-    components/
     lib/
     stores/
   styles/
@@ -51,15 +62,21 @@ src/
   tabs/
 ```
 
+## Dependency Rules
+
+- `app/*` → `features/<feature>/index`, `shared/*`, `backend/gateways/*`
+- `features/<feature>/*` → `shared/*`, `backend/gateways/*`, internal feature only
+- `backend/gateways/*` → `backend/client/*`, `backend/compat/*`, `backend/models/*`
+- `components/common/*` → `shared/*` only
+- **Forbidden**: any `src/*` → `src-old/*`, any `app/features/*` → `wailsjs/*` directly, any cross-feature internal imports
+
 ## Commands
 
 Run commands from `frontend/` unless noted otherwise.
 
 - Install dependencies: `npm install`
-- Local frontend dev server: `npm run dev`
 - Type check Svelte/TS: `npm run check`
 - Build frontend bundle: `npm run build`
-- Preview frontend build: `npm run preview`
 
 For full desktop app development and binding generation, run from repository root:
 
@@ -68,6 +85,7 @@ For full desktop app development and binding generation, run from repository roo
 
 ## Notes
 
-- Prefer using `src/shared/api/wails/gateway.ts` over direct calls to generated bindings in feature UI.
+- All Wails calls go through `backend/gateways/*` — never import from `wailsjs` in feature or app code.
+- Each feature exposes only its `index.ts` as a public surface; avoid deep imports into another feature.
 - Keep route metadata centralized in `src/app/routes/app-routes.ts`.
-- Keep feature-specific global styles in `src/styles/features/*.css`, and shared primitives in `src/styles/primitives/components.css`.
+- Keep feature-specific global styles in `src/styles/features/*.css`, shared primitives in `src/styles/primitives/components.css`.

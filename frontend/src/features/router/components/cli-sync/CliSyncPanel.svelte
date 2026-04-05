@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { Info, RefreshCw } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
-  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
-  import StatusBadge from '@/shared/components/StatusBadge.svelte'
+  import Button from '@/components/common/Button.svelte'
+  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
+  import StatusBadge from '@/components/common/StatusBadge.svelte'
   import CliSyncInfoModal from '@/features/router/components/cli-sync/CliSyncInfoModal.svelte'
   import type { CliSyncAppID, CliSyncResult, CliSyncStatus, LocalModelCatalogItem } from '@/features/router/types'
-  import { CLI_SYNC_CARDS, groupCliModels } from '@/features/router/lib/cli-sync'
+  import { CLI_SYNC_CARDS, groupCliModels } from '@/features/router/utils/cli-sync'
 
   export let busy = false
   export let proxyBaseURL = ''

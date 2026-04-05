@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AppRoute, RouteComponent, RouteOutletContext } from '@/app/routes/app-routes'
-  import SurfaceCard from '@/shared/components/SurfaceCard.svelte'
+  import SurfaceCard from '@/components/common/SurfaceCard.svelte'
 
   export let route: AppRoute
   export let component: RouteComponent | null = null

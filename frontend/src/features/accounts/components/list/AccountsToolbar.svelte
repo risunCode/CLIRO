@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy, onMount } from 'svelte'
   import { Ban, ChevronDown, Download, Power, RefreshCw, Trash2 } from 'lucide-svelte'
-  import { formatNumber } from '@/shared/lib/formatters'
-  import type { ProviderGroup } from '@/features/accounts/lib/account'
+  import { formatNumber } from '@/shared/utils/formatters'
+  import type { ProviderGroup } from '@/features/accounts/utils/account'
 
   export let accountsTotal = 0
   export let accountsByProvider: ProviderGroup[] = []

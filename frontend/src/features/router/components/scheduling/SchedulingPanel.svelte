@@ -1,8 +1,8 @@
 <script lang="ts">
   import { RefreshCw } from 'lucide-svelte'
-  import CollapsibleSurfaceSection from '@/shared/components/CollapsibleSurfaceSection.svelte'
+  import CollapsibleSurfaceSection from '@/components/common/CollapsibleSurfaceSection.svelte'
   import type { ProxyStatus } from '@/features/router/types'
-  import { SCHEDULING_MODE_CARDS, toSchedulingMode, type SchedulingMode } from '@/features/router/lib/scheduling'
+  import { SCHEDULING_MODE_CARDS, toSchedulingMode, type SchedulingMode } from '@/features/router/utils/scheduling'
 
   export let proxyStatus: ProxyStatus | null = null
   export let busy = false

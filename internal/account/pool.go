@@ -10,6 +10,26 @@ import (
 	"cliro-go/internal/config"
 )
 
+// ValidateProvider returns an error if the provider string is not a supported value.
+func ValidateProvider(provider string) error {
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	if normalized == "" {
+		return fmt.Errorf("account provider is required")
+	}
+	if normalized != "codex" && normalized != "kiro" {
+		return fmt.Errorf("unsupported account provider: %s", provider)
+	}
+	return nil
+}
+
+// ValidateAccount returns an error if the account is missing required fields.
+func ValidateAccount(account config.Account) error {
+	if strings.TrimSpace(account.ID) == "" {
+		return fmt.Errorf("account id is required")
+	}
+	return ValidateProvider(account.Provider)
+}
+
 type Pool struct {
 	store   *config.Manager
 	current uint64

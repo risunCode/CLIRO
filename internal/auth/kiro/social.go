@@ -1,7 +1,6 @@
 package kiro
 
 import (
-	"cliro-go/internal/util"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,6 +11,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"cliro-go/internal/provider"
+	"cliro-go/internal/util"
 )
 
 const socialCallbackPort = 9876
@@ -106,7 +108,7 @@ func (s *Service) exchangeSocialCode(ctx context.Context, code string, codeVerif
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("kiro social token exchange failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return nil, fmt.Errorf("kiro social token exchange failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var parsed SocialTokenResponse
@@ -170,7 +172,7 @@ func (s *Service) refreshSocialToken(ctx context.Context, refreshToken string) (
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("kiro social token refresh failed (%d): %s", resp.StatusCode, compactHTTPBody(respBody))
+		return nil, fmt.Errorf("kiro social token refresh failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(respBody))
 	}
 
 	var parsed struct {

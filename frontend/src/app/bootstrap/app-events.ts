@@ -1,4 +1,4 @@
-import { subscribeRuntimeEvent } from '@/shared/api/runtime/events'
+import { subscribeRuntimeEvent } from '@/backend/client/runtime-events'
 
 export interface AppRuntimeEventHandlers {
   onSecondInstanceNotice: (payload: unknown) => void

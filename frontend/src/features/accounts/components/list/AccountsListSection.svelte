@@ -1,14 +1,14 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { Search, Upload } from 'lucide-svelte'
-  import Button from '@/shared/components/Button.svelte'
+  import Button from '@/components/common/Button.svelte'
   import AccountsGrid from './AccountsGrid.svelte'
   import AccountsTable from './AccountsTable.svelte'
   import AccountsToolbar from './AccountsToolbar.svelte'
-  import { formatNumber } from '@/shared/lib/formatters'
+  import { formatNumber } from '@/shared/utils/formatters'
   import type { Account } from '@/features/accounts/types'
-  import type { ProviderGroup } from '@/features/accounts/lib/account'
-  import type { AccountsViewMode } from '@/features/accounts/lib/preferences'
+  import type { ProviderGroup } from '@/features/accounts/utils/account'
+  import type { AccountsViewMode } from '@/features/accounts/utils/preferences'
 
   export let accounts: Account[] = []
   export let accountsByProvider: ProviderGroup[] = []

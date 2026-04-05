@@ -3,7 +3,7 @@
   import AppCloseModal from '@/app/modals/AppCloseModal.svelte'
   import ConfigurationRecoveryModal from '@/app/modals/ConfigurationRecoveryModal.svelte'
   import UpdateRequiredModal from '@/app/modals/UpdateRequiredModal.svelte'
-  import ToastViewport from '@/shared/components/ToastViewport.svelte'
+  import ToastViewport from '@/components/common/ToastViewport.svelte'
 
   export let overlays: AppOverlayState
   export let appActions: AppActions

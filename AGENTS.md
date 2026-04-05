@@ -60,7 +60,7 @@ CLIro-Go mimics official client user agents to ensure compatibility with upstrea
 - Windows: `opencode/1.2.27 (windows 10.0.26100; amd64)`
 - Mac ARM: `opencode/1.2.27 (darwin 23.0.0; arm64)`
 - Mac Intel: `opencode/1.2.27 (darwin 23.0.0; amd64)`
-- Linux: `opencode/1.2.27 (linux 6.5.0; amd64)``
+- Linux: `opencode/1.2.27 (linux 6.5.0; amd64)`
 
 **Headers Sent**:
 - `User-Agent`: Dynamic opencode format with OS detection
@@ -160,7 +160,7 @@ Output (Windows): `build/bin/Cliro-Go.exe`
 - `app.go` exposes methods used by frontend.
 - `main.go` binds `App` into Wails runtime.
 - Generated bindings live in `frontend/wailsjs/go/main/`.
-- Frontend Wails wrapper is in `frontend/src/shared/api/wails/client.ts`.
+- Frontend calls into backend exclusively through `frontend/src/backend/` layer.
 
 ### Frontend Module Boundaries
 
@@ -168,70 +168,193 @@ Current frontend layout:
 
 ```text
 frontend/src/
-  App.svelte           # app bootstrap and shell wiring
-  app/                 # app shell orchestration, overlays, top-level services, shared app contracts
-    api/
-    lib/
+  App.svelte                        # app entry — mounts AppFrame
+  main.ts                           # Svelte bootstrap
+
+  app/                              # app-level orchestration
+    bootstrap/
+      app-bootstrap.ts              # initializeAppBootstrap() — startup sequence
+      app-events.ts                 # bindAppRuntimeEvents / bindAppActivityEvents
     modals/
-    providers/
+      AppCloseModal.svelte          # close-to-tray / confirm-quit modal
+      ConfigurationRecoveryModal.svelte
+      UpdateRequiredModal.svelte
+    overlays/
+      AppOverlayHost.svelte         # stacks all app-level modals
+    routes/
+      app-routes.ts                 # APP_ROUTES registry — static + lazy per tab
+      RouteOutlet.svelte            # renders the active route component
     services/
-      app-controller.ts
-      logs-subscription.ts
-      startup-warnings.ts
+      app-controller.ts             # central controller — AppShellState + all action namespaces
+      logs-subscription.ts          # Wails event → ring-log bridge
+      startup-warnings.ts           # maps startup warnings to display entries
     shell/
-    types.ts
-  features/            # domain features and feature-local UI/helpers
+      AppFrame.svelte               # top-level shell: header + tabs + route outlet + footer
+      AppHeader.svelte
+      AppFooter.svelte
+    types/
+      index.ts                      # AppState, LogEntry, UpdateInfo
+    utils/
+      backup.ts
+      tabs.ts                       # APP_TABS, AppTabId
+
+  backend/                          # all backend access — ONLY place that imports wailsjs
+    client/
+      browser.ts                    # browser-mode stubs
+      index.ts                      # re-exports
+      runtime-events.ts             # typed Wails event subscription helpers
+      wails-client.ts               # raw Wails JS bindings wrapper
+    compat/
+      accounts-compat.ts            # WailsAccount → Account shape mapping
+      router-compat.ts              # WailsProxyStatus → ProxyStatus mapping
+      coerce.ts                     # shared coerce helpers
+      index.ts
+    gateways/
+      accounts-gateway.ts           # account CRUD calls
+      auth-gateway.ts               # codex + kiro auth calls
+      logs-gateway.ts               # getLogs / clearLogs
+      router-gateway.ts             # proxy / cloudflared / alias / cli-sync calls
+      system-gateway.ts             # getState / openDataDir / confirmQuit / hideToTray etc.
+      wails-gateway.ts              # single import point for all backend calls
+      index.ts
+    models/
+      wails.ts                      # raw Wails DTO types (WailsAccount, WailsAppState, …)
+      system.ts
+      index.ts
+
+  features/                         # domain features
     accounts/
+      api/
+        accounts-api.ts
+        auth-api.ts
       components/
+        AccountsScreen.svelte       # container: wires store + actions → AccountsWorkspace
+        AccountsWorkspace.svelte
         connect/
+          AccountsConnectSection.svelte
+          ConnectPromptModal.svelte
+          KiroConnectModal.svelte
         list/
+          AccountActions.svelte / AccountCard.svelte / AccountRow.svelte
+          AccountsGrid.svelte / AccountsListSection.svelte
+          AccountsTable.svelte / AccountsToolbar.svelte / ProviderAvatar.svelte
         modals/
+          AccountDetailModal.svelte / AccountSyncModal.svelte
+          AccountsWorkspaceModals.svelte / BatchDeleteModal.svelte / CredentialField.svelte
+      store/
+        accounts-actions.ts         # createAccountsScreenActions()
+        accounts-store.ts           # createAccountsStoreState()
+      utils/
+        account.ts / account-quota.ts / auth-session.ts
+        preferences.ts / presenter.ts / sync.ts
+        workspace.ts / workspace-controller.ts
+      index.ts / types.ts
+
     router/
       components/
         cli-sync/
+          CliSyncInfoModal.svelte / CliSyncPanel.svelte
         cloudflared/
+          CloudflaredPanel.svelte
         endpoint-tester/
+          EndpointTesterPanel.svelte
         model-alias/
+          ModelAliasPanel.svelte
         proxy/
+          ProxyControlsPanel.svelte / ProxyInlineSwitch.svelte
+          ProxyRuntimeCard.svelte / ProxySecurityCard.svelte
         scheduling/
+          SchedulingPanel.svelte
+      store/
+        router-actions.ts
+        router-store.ts
+      utils/
+        alias-form.ts / cli-sync.ts / cloudflared.ts
+        endpoint-tester.ts / scheduling.ts
+      index.ts / types.ts
+
     logs/
       components/
-      lib/
+        SystemLogsWorkspace.svelte
+      utils/
+        logs-view.ts                # maps LogEntry → display columns (Level/Source/Account/Detail/Time)
+      index.ts
+
     usage/
       components/
-      lib/
-  shared/              # cross-feature utilities and stores
-    api/wails/
-    lib/
+        UsageWorkspace.svelte
+      utils/
+        request-log.ts
+      index.ts
+
+    settings/                       # settings feature
+      components/
+        BackupToolsCard.svelte      # export / import / restore backup
+        DataFolderCard.svelte       # open data folder
+        SettingsScreen.svelte       # top-level settings layout
+      store/
+        task-state.ts               # deriveSettingsViewState / createAsyncTaskState
+      utils/
+        backup.ts                   # validateBackupPayload / assertBackupPayloadRestorable
+      index.ts / types.ts
+
+  components/common/                # reusable UI primitives
+    BaseModal.svelte / Button.svelte / CollapsibleSurfaceSection.svelte
+    ControlWorkspaceCard.svelte / ModalBackdrop.svelte / ModalWindowHeader.svelte
+    OpsPanelSection.svelte / StatusBadge.svelte / SurfaceCard.svelte
+    ToastViewport.svelte / ToggleSwitch.svelte
+
+  shared/                           # cross-feature utilities
     stores/
-  components/common/   # reusable primitives
-  tabs/                # tab wrappers that compose app/features
-  styles/              # base/theme/component stylesheets
+      theme.ts / toast.ts
+    utils/
+      async.ts / browser.ts / cn.ts / copy.ts
+      error.ts / formatters.ts / storage.ts
+
+  tabs/                             # thin tab wrappers (compose features)
+    AccountsTab.svelte
+    ApiRouterTab.svelte
+    DashboardTab.svelte
+    SystemLogsTab.svelte
+    UsageTab.svelte
+    # SettingsTab.svelte removed — settings routes directly to SettingsScreen
+
+  styles/
+    index.css                       # imports all partials
+    base/base.css
+    tokens/theme.css
+    primitives/components.css
+    features/
+      accounts.css / logs.css / router.css / settings.css / usage.css
 ```
 
 Key frontend files:
 
-- Root shell and orchestration:
-  - `frontend/src/App.svelte`
-  - `frontend/src/app/services/app-controller.ts`
-  - `frontend/src/app/providers/AppOverlayStack.svelte`
+- App bootstrap and shell:
+  - `frontend/src/app/bootstrap/app-bootstrap.ts` — `initializeAppBootstrap()` startup sequence
+  - `frontend/src/app/bootstrap/app-events.ts` — runtime + activity event binding
+  - `frontend/src/app/services/app-controller.ts` — `AppShellState`, `AppActions`, `AccountsActions`, `RouterActions`, `LogsActions`, `SettingsActions`
+  - `frontend/src/app/routes/app-routes.ts` — `APP_ROUTES` static + lazy route registry
+  - `frontend/src/app/routes/RouteOutlet.svelte` — renders active tab route
   - `frontend/src/app/shell/AppFrame.svelte`
+  - `frontend/src/app/utils/tabs.ts` — `APP_TABS`, `AppTabId`
+- Backend access layer:
+  - `frontend/src/backend/gateways/wails-gateway.ts` — single import point for all backend calls
+  - `frontend/src/backend/client/wails-client.ts` — raw Wails JS binding wrapper
+  - `frontend/src/backend/compat/` — Wails DTO → domain type mapping
 - Accounts feature:
-  - `frontend/src/features/accounts/components/AccountsWorkspace.svelte`
+  - `frontend/src/features/accounts/components/AccountsScreen.svelte` — container
+  - `frontend/src/features/accounts/store/accounts-actions.ts`
+  - `frontend/src/features/accounts/store/accounts-store.ts`
 - Router feature:
-  - `frontend/src/features/router/components/proxy/ProxyControlsPanel.svelte`
-  - `frontend/src/features/router/components/proxy/ProxyRuntimeCard.svelte`
-  - `frontend/src/features/router/components/proxy/ProxySecurityCard.svelte`
-  - `frontend/src/features/router/components/scheduling/SchedulingPanel.svelte`
-  - `frontend/src/features/router/components/cloudflared/CloudflaredPanel.svelte`
-  - `frontend/src/features/router/components/endpoint-tester/EndpointTesterPanel.svelte`
-  - `frontend/src/features/router/components/model-alias/ModelAliasPanel.svelte`
-  - `frontend/src/features/router/components/cli-sync/CliSyncPanel.svelte`
-- Logs and usage feature workspaces:
-  - `frontend/src/features/logs/components/SystemLogsWorkspace.svelte`
-  - `frontend/src/features/logs/lib/logs-view.ts`
-  - `frontend/src/features/usage/components/UsageWorkspace.svelte`
-  - `frontend/src/features/usage/lib/request-log.ts`
+  - `frontend/src/features/router/store/router-actions.ts`
+  - `frontend/src/features/router/store/router-store.ts`
+- Settings feature:
+  - `frontend/src/features/settings/components/SettingsScreen.svelte`
+  - `frontend/src/features/settings/utils/backup.ts`
+- Logs and usage:
+  - `frontend/src/features/logs/utils/logs-view.ts`
+  - `frontend/src/features/usage/utils/request-log.ts`
 
 ### Backend Core Modules
 
@@ -288,10 +411,10 @@ Kilo install detection:
 
 - Backend emits log events via Wails runtime events.
 - Frontend subscribes via `frontend/src/app/services/logs-subscription.ts` and renders in system logs UI.
-- Structured log entries now include `level`, `scope`, `event`, `requestId`, `message`, and optional `fields`.
-- The system logs table is optimized around `Level / Source / Account / Detail / Time`; update `frontend/src/features/logs/lib/logs-view.ts` when `logger.Entry` shape changes.
+- Structured log entries include `level`, `scope`, `event`, `requestId`, `message`, and optional `fields`.
+- The system logs table is optimized around `Level / Source / Account / Detail / Time`; update `frontend/src/features/logs/utils/logs-view.ts` when `logger.Entry` shape changes.
 
-## Key App Methods (Wails -> Frontend)
+## Key App Methods (Wails → Frontend)
 
 Important methods exposed in `app.go`:
 
@@ -304,6 +427,12 @@ Important methods exposed in `app.go`:
 - `GetLogs(limit int)`
 - `ClearLogs()`
 - `GetHostName()`
+
+### Lifecycle & Window
+
+- `ConfirmQuit()`
+- `HideToTray()`
+- `RestoreWindow()`
 
 ### Proxy & Router Controls
 
@@ -381,11 +510,16 @@ Default base URL: `http://localhost:8095`
 
 ### Frontend (Svelte + TS)
 
-- Keep data access inside feature/shared API modules rather than ad-hoc Wails calls in UI.
-- Reuse `components/common/` primitives and shared stores.
+- **All backend access goes through `frontend/src/backend/`** — never import from `wailsjs` directly in features or UI components.
+- Use `backend/gateways/wails-gateway.ts` as the single import point for backend calls in feature API modules.
+- Keep data access inside feature `api/` or `store/` modules, not ad-hoc in UI components.
+- Reuse `components/common/` primitives and `shared/` stores/utils.
 - Keep tab files thin; place business logic in `features/*` and `app/*` modules.
+- Feature screens use a container component (e.g., `AccountsScreen.svelte`, `SettingsScreen.svelte`) that wires store state + actions, then passes them down to workspace components.
+- Route registration lives in `app/routes/app-routes.ts` — add new tabs there using static or lazy `load:` routes.
 - Keep router sub-surfaces under feature-owned folders (`proxy/`, `cloudflared/`, `cli-sync/`, `endpoint-tester/`, `model-alias/`, `scheduling/`).
-- When system log structure changes, update both `frontend/src/features/logs/lib/logs-view.ts` and `frontend/src/features/logs/components/SystemLogsWorkspace.svelte` together.
+- When system log structure changes, update both `frontend/src/features/logs/utils/logs-view.ts` and `frontend/src/features/logs/components/SystemLogsWorkspace.svelte` together.
+- Styles split by feature under `frontend/src/styles/features/` — add a new CSS file per new feature.
 - Use `npm run check` before finalizing changes.
 
 ## Common Tasks
@@ -393,9 +527,16 @@ Default base URL: `http://localhost:8095`
 ### Add a New Wails Method
 
 1. Add exported method to `app.go`.
-2. Run `wails dev` or `wails build` to regenerate JS/TS bindings.
-3. Expose via `frontend/src/shared/api/wails/client.ts`.
-4. Wire feature-level adapter/API module.
+2. Run `wails dev` or `wails build` to regenerate JS/TS bindings in `frontend/wailsjs/`.
+3. Expose via the appropriate gateway in `frontend/src/backend/gateways/`.
+4. Wire into a feature-level action or store.
+
+### Add a New Tab / Route
+
+1. Create the tab component under `frontend/src/tabs/` (thin wrapper) or a screen under `features/<name>/components/`.
+2. Register a new route entry in `frontend/src/app/routes/app-routes.ts` — use `load:` for lazy routes.
+3. Add the tab ID to `APP_TABS` in `frontend/src/app/utils/tabs.ts`.
+4. Add the tab button to `AppHeader.svelte`.
 
 ### Add a New Proxy Capability
 
@@ -435,10 +576,19 @@ Default base URL: `http://localhost:8095`
 
 ## Troubleshooting Hints
 
-- **Proxy won’t start**: port conflict; change port or free process.
+- **Proxy won't start**: port conflict; change port or free process.
 - **No available accounts**: check enabled flag, cooldown, quota status, and auth validity.
 - **Cloudflared URL missing**: ensure proxy is running and Cloudflared status refreshed.
 - **CLI sync says unsupported target/model**: verify target ID union and local model catalog membership.
+
+## System Tray (Windows)
+
+- **Library**: `fyne.io/systray v1.12.0` (replaces `github.com/getlantern/systray`)
+- **Implementation**: `internal/tray/controller_windows.go`
+- **Entry point**: `systray.Register(onReady, onExit)` — non-blocking, hooks into the existing Wails/WebView2 message pump on the main thread. Do **not** switch back to `go systray.Run(...)` — that pattern breaks tray menu delivery on Windows because it creates the tray HWND on a goroutine without a proper shell-accessible message loop.
+- **Why**: Wails owns the OS main thread. `systray.Run()` from `getlantern/systray` tried to own it too (via a goroutine), causing Windows to silently drop tray shell messages (`WM_RBUTTONUP`, `WM_LBUTTONUP`). `fyne.io/systray`'s `Register()` is specifically designed for embedding alongside webview/toolkit event loops.
+- **Controller interface**: unchanged — `Start()`, `SetProxyRunning()`, `Close()`, `Supported()`, `Available()` all remain stable.
+- **Non-Windows**: `controller_other.go` is a noop stub; no changes needed there.
 
 ## Known Issues & Workarounds
 
@@ -461,25 +611,10 @@ Default base URL: `http://localhost:8095`
 - Recommended MCP servers:
   1. **WebSearch-MCP** by mnhlt (recommended for production)
      - Repository: `https://github.com/mnhlt/WebSearch-MCP`
-  - Self-hosted with Docker
+     - Self-hosted with Docker
      - Bypass Cloudflare protection with FlareSolverr
      - Advanced filtering options (language, region, domains, result type)
      - Installation: `npx -y @smithery/cli install @mnhlt/WebSearch-MCP --client claude`
-     - Configuration:
-       ```json
-       {
-  "mcpServers": {
-           "websearch": {
-       "command": "npx",
-          "args": ["websearch-mcp"],
-      "env": {
-           "API_URL": "http://localhost:3001",
-    "MAX_SEARCH_RESULT": "5"
-        }
-         }
-         }
-    }
-       ```
   2. **web-search** by pskill9 (simple alternative)
      - Repository: `https://github.com/pskill9/web-search`
      - No API keys required
@@ -490,7 +625,6 @@ Default base URL: `http://localhost:8095`
 - Investigate Kiro MCP compatibility issues with Claude Code
 - Consider implementing alternative web search providers (e.g., Brave Search API, DuckDuckGo)
 - Add configuration option to disable built-in web search and rely on external MCP servers
-- Explore direct integration with external MCP servers as fallback
 
 ## References
 

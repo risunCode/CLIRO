@@ -4,7 +4,7 @@
   import AccountDetailModal from './AccountDetailModal.svelte'
   import AccountSyncModal from './AccountSyncModal.svelte'
   import BatchDeleteModal from './BatchDeleteModal.svelte'
-  import { isPendingAuthSession } from '@/features/accounts/lib/workspace'
+  import { isPendingAuthSession } from '@/features/accounts/utils/workspace'
   import type {
     Account,
     AccountSyncResult,

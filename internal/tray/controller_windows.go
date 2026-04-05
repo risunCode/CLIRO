@@ -7,7 +7,7 @@ import (
 	_ "embed"
 	"sync"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 )
 
 //go:embed assets/tray.ico
@@ -58,7 +58,7 @@ func (c *windowsController) Start(_ context.Context, callbacks MenuCallbacks) er
 	}
 	c.mu.Unlock()
 
-	go systray.Run(c.onReady, c.onExit)
+	systray.Register(c.onReady, c.onExit)
 	return nil
 }
 

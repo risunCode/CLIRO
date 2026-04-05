@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AppActions, AppShellState, AccountsActions, LogsActions, RouterActions, SettingsActions } from '@/app/services/app-controller'
-  import type { AppTabId } from '@/app/lib/tabs'
+  import type { AppTabId } from '@/app/utils/tabs'
   import { APP_ROUTES, getAppRoute, isLazyRoute, type AppRoute, type RouteComponent, type RouteOutletContext } from '@/app/routes/app-routes'
   import RouteOutlet from '@/app/routes/RouteOutlet.svelte'
   import AppFooter from '@/app/shell/AppFooter.svelte'
