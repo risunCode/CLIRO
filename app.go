@@ -80,6 +80,141 @@ type SecondLaunchNotice struct {
 	ReceivedAt       int64    `json:"receivedAt"`
 }
 
+type ProxyCloudflaredStatus struct {
+	Enabled   bool   `json:"enabled"`
+	Mode      string `json:"mode"`
+	Token     string `json:"token"`
+	UseHTTP2  bool   `json:"useHttp2"`
+	Installed bool   `json:"installed"`
+	Version   string `json:"version,omitempty"`
+	Running   bool   `json:"running"`
+	URL       string `json:"url,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type ProxyStatus struct {
+	Running           bool                   `json:"running"`
+	Port              int                    `json:"port"`
+	URL               string                 `json:"url"`
+	BindAddress       string                 `json:"bindAddress"`
+	AllowLAN          bool                   `json:"allowLan"`
+	AutoStartProxy    bool                   `json:"autoStartProxy"`
+	ProxyAPIKey       string                 `json:"proxyApiKey"`
+	AuthorizationMode bool                   `json:"authorizationMode"`
+	SchedulingMode    string                 `json:"schedulingMode"`
+	Cloudflared       ProxyCloudflaredStatus `json:"cloudflared"`
+}
+
+type ModelCatalogItem struct {
+	ID      string `json:"id"`
+	OwnedBy string `json:"ownedBy"`
+}
+
+type CLISyncFile struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type CLISyncStatus struct {
+	ID             string        `json:"id"`
+	Label          string        `json:"label"`
+	Installed      bool          `json:"installed"`
+	InstallPath    string        `json:"installPath,omitempty"`
+	Version        string        `json:"version,omitempty"`
+	Synced         bool          `json:"synced"`
+	CurrentBaseURL string        `json:"currentBaseUrl,omitempty"`
+	CurrentModel   string        `json:"currentModel,omitempty"`
+	Files          []CLISyncFile `json:"files"`
+}
+
+type CLISyncResult struct {
+	ID             string        `json:"id"`
+	Label          string        `json:"label"`
+	Model          string        `json:"model,omitempty"`
+	CurrentBaseURL string        `json:"currentBaseUrl,omitempty"`
+	Files          []CLISyncFile `json:"files"`
+}
+
+type RunCLISyncInput struct {
+	Target string `json:"target"`
+	Model  string `json:"model,omitempty"`
+}
+
+type CLISyncFileInput struct {
+	Target string `json:"target"`
+	Path   string `json:"path"`
+}
+
+type SaveCLISyncFileInput struct {
+	Target  string `json:"target"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type UpdateProxySettingsInput struct {
+	Port              *int    `json:"port,omitempty"`
+	AllowLAN          *bool   `json:"allowLan,omitempty"`
+	AutoStartProxy    *bool   `json:"autoStartProxy,omitempty"`
+	ProxyAPIKey       *string `json:"proxyApiKey,omitempty"`
+	RegenerateAPIKey  bool    `json:"regenerateApiKey,omitempty"`
+	AuthorizationMode *bool   `json:"authorizationMode,omitempty"`
+	SchedulingMode    *string `json:"schedulingMode,omitempty"`
+}
+
+type ProxySettingsUpdateResult struct {
+	RestartedProxy       bool   `json:"restartedProxy"`
+	RestartedCloudflared bool   `json:"restartedCloudflared"`
+	GeneratedAPIKey      string `json:"generatedApiKey,omitempty"`
+}
+
+type UpdateCloudflaredSettingsInput struct {
+	Mode     *string `json:"mode,omitempty"`
+	Token    *string `json:"token,omitempty"`
+	UseHTTP2 *bool   `json:"useHttp2,omitempty"`
+}
+
+type RunAccountActionInput struct {
+	AccountID string `json:"accountId"`
+	Action    string `json:"action"`
+}
+
+type RunQuotaActionInput struct {
+	Action    string `json:"action"`
+	AccountID string `json:"accountId,omitempty"`
+}
+
+type RunSystemActionInput struct {
+	Action string `json:"action"`
+}
+
+const (
+	proxyActionStart  = "start"
+	proxyActionStop   = "stop"
+	proxyActionToggle = "toggle"
+
+	cloudflaredActionInstall       = "install"
+	cloudflaredActionStart         = "start"
+	cloudflaredActionStop          = "stop"
+	cloudflaredActionRefreshStatus = "refresh-status"
+
+	accountActionRefresh          = "refresh"
+	accountActionRefreshWithQuota = "refresh-with-quota"
+	accountActionEnable           = "enable"
+	accountActionDisable          = "disable"
+	accountActionDelete           = "delete"
+	accountActionClearCooldown    = "clear-cooldown"
+
+	quotaActionRefreshOne      = "refresh-one"
+	quotaActionRefreshAll      = "refresh-all"
+	quotaActionForceRefreshAll = "force-refresh-all"
+
+	systemActionConfirmQuit   = "confirm-quit"
+	systemActionHideToTray    = "hide-to-tray"
+	systemActionRestoreWindow = "restore-window"
+	systemActionOpenDataDir   = "open-data-dir"
+	systemActionClearLogs     = "clear-logs"
+)
+
 func NewApp() *App {
 	return &App{
 		tray:               tray.NewController(),
@@ -225,67 +360,8 @@ func (a *App) GetAccounts() []config.Account {
 	return a.store.Accounts()
 }
 
-func (a *App) GetProxyStatus() map[string]any {
-	if a.store == nil {
-		return map[string]any{}
-	}
-	port := a.store.ProxyPort()
-	allowLAN := a.store.AllowLAN()
-	bindAddr := platform.ProxyBindAddress(allowLAN, port)
-	if a.proxy != nil && a.proxy.Running() {
-		if runningBindAddr := a.proxy.BindAddress(); runningBindAddr != "" {
-			bindAddr = runningBindAddr
-		}
-	}
-	cloudflaredConfig := a.store.Cloudflared()
-	cloudflaredStatus := cloudflared.Status{}
-	if a.cf != nil {
-		cloudflaredStatus = a.cf.GetStatus()
-	}
-	return map[string]any{
-		"running":           a.proxy != nil && a.proxy.Running(),
-		"port":              port,
-		"url":               platform.ProxyURL(port),
-		"bindAddress":       bindAddr,
-		"allowLan":          allowLAN,
-		"autoStartProxy":    a.store.AutoStartProxy(),
-		"proxyApiKey":       a.store.ProxyAPIKey(),
-		"authorizationMode": a.store.AuthorizationMode(),
-		"schedulingMode":    string(a.store.SchedulingMode()),
-		"cloudflared": map[string]any{
-			"enabled":   cloudflaredConfig.Enabled,
-			"mode":      string(cloudflaredConfig.Mode),
-			"token":     cloudflaredConfig.Token,
-			"useHttp2":  cloudflaredConfig.UseHTTP2,
-			"installed": cloudflaredStatus.Installed,
-			"version":   cloudflaredStatus.Version,
-			"running":   cloudflaredStatus.Running,
-			"url":       cloudflaredStatus.URL,
-			"error":     cloudflaredStatus.Error,
-		},
-	}
-}
-
-func (a *App) RefreshCloudflaredStatus() map[string]any {
-	status := a.GetProxyStatus()
-	if a.store == nil || a.cf == nil {
-		return status
-	}
-
-	cloudflaredConfig := a.store.Cloudflared()
-	cloudflaredStatus := a.cf.RefreshStatus()
-	status["cloudflared"] = map[string]any{
-		"enabled":   cloudflaredConfig.Enabled,
-		"mode":      string(cloudflaredConfig.Mode),
-		"token":     cloudflaredConfig.Token,
-		"useHttp2":  cloudflaredConfig.UseHTTP2,
-		"installed": cloudflaredStatus.Installed,
-		"version":   cloudflaredStatus.Version,
-		"running":   cloudflaredStatus.Running,
-		"url":       cloudflaredStatus.URL,
-		"error":     cloudflaredStatus.Error,
-	}
-	return status
+func (a *App) GetProxyStatus() ProxyStatus {
+	return a.proxyStatus(false)
 }
 
 func (a *App) GetLogs(limit int) []logger.Entry {
@@ -307,81 +383,116 @@ func (a *App) GetHostName() string {
 	return host
 }
 
-func (a *App) StartCodexAuth() (*auth.CodexAuthStart, error) {
-	return a.auth.StartCodexAuth()
+func (a *App) StartAuth(provider string) (*auth.AuthStart, error) {
+	return a.auth.StartAuth(provider)
 }
 
-func (a *App) GetCodexAuthSession(sessionID string) auth.CodexAuthSessionView {
-	return a.auth.GetCodexAuthSession(sessionID)
+func (a *App) StartSocialAuth(provider string, socialProvider string) (*auth.AuthStart, error) {
+	return a.auth.StartSocialAuth(provider, socialProvider)
 }
 
-func (a *App) CancelCodexAuth(sessionID string) {
-	a.auth.CancelCodexAuth(sessionID)
+func (a *App) GetAuthSession(provider string, sessionID string) auth.AuthSessionView {
+	return a.auth.GetAuthSession(provider, sessionID)
 }
 
-func (a *App) SubmitCodexAuthCode(sessionID string, code string) error {
-	return a.auth.SubmitCodexAuthCode(sessionID, code)
+func (a *App) CancelAuth(provider string, sessionID string) {
+	a.auth.CancelAuth(provider, sessionID)
 }
 
-func (a *App) StartKiroAuth() (*auth.KiroAuthStart, error) {
-	return a.auth.StartKiroAuth()
+func (a *App) SubmitAuthCode(provider string, sessionID string, code string) error {
+	return a.auth.SubmitAuthCode(provider, sessionID, code)
 }
 
-func (a *App) StartKiroSocialAuth(provider string) (*auth.KiroAuthStart, error) {
-	return a.auth.StartKiroSocialAuth(provider)
+func (a *App) RunAccountAction(input RunAccountActionInput) error {
+	if a.store == nil {
+		return fmt.Errorf("store is not ready")
+	}
+
+	action := strings.ToLower(strings.TrimSpace(input.Action))
+	accountID := strings.TrimSpace(input.AccountID)
+
+	switch action {
+	case accountActionRefresh:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for account action %q", action)
+		}
+		if a.auth == nil {
+			return fmt.Errorf("auth service is not ready")
+		}
+		_, err := a.auth.RefreshAccount(accountID)
+		return err
+	case accountActionRefreshWithQuota:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for account action %q", action)
+		}
+		if a.quota == nil {
+			return fmt.Errorf("quota service is not ready")
+		}
+		_, err := a.quota.RefreshAccountWithQuota(accountID)
+		return err
+	case accountActionEnable:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for account action %q", action)
+		}
+		return a.setAccountEnabled(accountID, true)
+	case accountActionDisable:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for account action %q", action)
+		}
+		return a.setAccountEnabled(accountID, false)
+	case accountActionDelete:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for account action %q", action)
+		}
+		a.log.Info("account", "deleting account "+accountID)
+		return a.store.DeleteAccount(accountID)
+	case accountActionClearCooldown:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for account action %q", action)
+		}
+		return a.clearCooldown(accountID)
+	default:
+		return fmt.Errorf("unsupported account action: %s", input.Action)
+	}
 }
 
-func (a *App) GetKiroAuthSession(sessionID string) auth.KiroAuthSessionView {
-	return a.auth.GetKiroAuthSession(sessionID)
+func (a *App) RunQuotaAction(input RunQuotaActionInput) error {
+	if a.quota == nil {
+		return fmt.Errorf("quota service is not ready")
+	}
+
+	action := strings.ToLower(strings.TrimSpace(input.Action))
+	accountID := strings.TrimSpace(input.AccountID)
+
+	switch action {
+	case quotaActionRefreshOne:
+		if accountID == "" {
+			return fmt.Errorf("account id is required for quota action %q", action)
+		}
+		_, err := a.quota.RefreshQuota(accountID)
+		return err
+	case quotaActionRefreshAll:
+		return a.quota.RefreshAllQuotas()
+	case quotaActionForceRefreshAll:
+		return a.quota.ForceRefreshAllQuotas()
+	default:
+		return fmt.Errorf("unsupported quota action: %s", input.Action)
+	}
 }
 
-func (a *App) CancelKiroAuth(sessionID string) {
-	a.auth.CancelKiroAuth(sessionID)
-}
-
-func (a *App) SubmitKiroAuthCode(sessionID string, code string) error {
-	return a.auth.SubmitKiroAuthCode(sessionID, code)
-}
-
-func (a *App) RefreshAccount(accountID string) error {
-	_, err := a.auth.RefreshAccount(accountID)
-	return err
-}
-
-func (a *App) RefreshAccountWithQuota(accountID string) error {
-	_, err := a.quota.RefreshAccountWithQuota(accountID)
-	return err
-}
-
-func (a *App) RefreshQuota(accountID string) error {
-	_, err := a.quota.RefreshQuota(accountID)
-	return err
-}
-
-func (a *App) RefreshAllQuotas() error {
-	return a.quota.RefreshAllQuotas()
-}
-
-func (a *App) ForceRefreshAllQuotas() error {
-	return a.quota.ForceRefreshAllQuotas()
-}
-
-func (a *App) GetLocalModelCatalog() []map[string]any {
+func (a *App) GetLocalModelCatalog() []ModelCatalogItem {
 	if a.cli == nil {
 		return nil
 	}
 	models := a.cli.ModelCatalog()
-	out := make([]map[string]any, 0, len(models))
+	out := make([]ModelCatalogItem, 0, len(models))
 	for _, model := range models {
-		out = append(out, map[string]any{
-			"id":      model.ID,
-			"ownedBy": model.OwnedBy,
-		})
+		out = append(out, ModelCatalogItem{ID: model.ID, OwnedBy: model.OwnedBy})
 	}
 	return out
 }
 
-func (a *App) GetCLISyncStatuses() ([]map[string]any, error) {
+func (a *App) GetCLISyncStatuses() ([]CLISyncStatus, error) {
 	if a.cli == nil || a.store == nil {
 		return nil, fmt.Errorf("cli sync service is not ready")
 	}
@@ -389,113 +500,87 @@ func (a *App) GetCLISyncStatuses() ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]map[string]any, 0, len(statuses))
+	out := make([]CLISyncStatus, 0, len(statuses))
 	for _, status := range statuses {
-		files := make([]map[string]any, 0, len(status.Files))
+		files := make([]CLISyncFile, 0, len(status.Files))
 		for _, file := range status.Files {
-			files = append(files, map[string]any{"name": file.Name, "path": file.Path})
+			files = append(files, CLISyncFile{Name: file.Name, Path: file.Path})
 		}
-		out = append(out, map[string]any{
-			"id":             status.ID,
-			"label":          status.Label,
-			"installed":      status.Installed,
-			"installPath":    status.InstallPath,
-			"version":        status.Version,
-			"synced":         status.Synced,
-			"currentBaseUrl": status.CurrentBaseURL,
-			"currentModel":   status.CurrentModel,
-			"files":          files,
+		out = append(out, CLISyncStatus{
+			ID:             status.ID,
+			Label:          status.Label,
+			Installed:      status.Installed,
+			InstallPath:    status.InstallPath,
+			Version:        status.Version,
+			Synced:         status.Synced,
+			CurrentBaseURL: status.CurrentBaseURL,
+			CurrentModel:   status.CurrentModel,
+			Files:          files,
 		})
 	}
 	return out, nil
 }
 
-func (a *App) SyncCLIConfig(appID string, model string) (map[string]any, error) {
+func (a *App) RunCLISync(input RunCLISyncInput) (CLISyncResult, error) {
 	if a.cli == nil || a.store == nil {
-		return nil, fmt.Errorf("cli sync service is not ready")
+		return CLISyncResult{}, fmt.Errorf("cli sync service is not ready")
 	}
 	apiKey := strings.TrimSpace(a.store.ProxyAPIKey())
 	if apiKey == "" {
 		generated, err := generateProxyAPIKey()
 		if err != nil {
-			return nil, err
+			return CLISyncResult{}, err
 		}
 		if err := a.store.SetProxyAPIKey(generated); err != nil {
-			return nil, err
+			return CLISyncResult{}, err
 		}
 		apiKey = generated
 		a.log.Info("proxy", "proxy API key autogenerated for cli sync")
 	}
-	result, err := a.cli.Sync(cliconfig.App(appID), platform.ProxyURL(a.store.ProxyPort()), apiKey, model)
+	target := strings.TrimSpace(input.Target)
+	result, err := a.cli.Sync(cliconfig.App(target), platform.ProxyURL(a.store.ProxyPort()), apiKey, input.Model)
 	if err != nil {
-		return nil, err
+		return CLISyncResult{}, err
 	}
-	files := make([]map[string]any, 0, len(result.Files))
+	files := make([]CLISyncFile, 0, len(result.Files))
 	for _, file := range result.Files {
-		files = append(files, map[string]any{"name": file.Name, "path": file.Path})
+		files = append(files, CLISyncFile{Name: file.Name, Path: file.Path})
 	}
-	return map[string]any{
-		"id":             result.ID,
-		"label":          result.Label,
-		"model":          result.Model,
-		"currentBaseUrl": result.CurrentBaseURL,
-		"files":          files,
+	return CLISyncResult{
+		ID:             result.ID,
+		Label:          result.Label,
+		Model:          result.Model,
+		CurrentBaseURL: result.CurrentBaseURL,
+		Files:          files,
 	}, nil
 }
 
-func (a *App) GetCLISyncFileContent(appID string, path string) (string, error) {
+func (a *App) GetCLISyncFile(input CLISyncFileInput) (string, error) {
 	if a.cli == nil {
 		return "", fmt.Errorf("cli sync service is not ready")
 	}
-	return a.cli.ReadConfigFile(cliconfig.App(appID), path)
+	return a.cli.ReadConfigFile(cliconfig.App(strings.TrimSpace(input.Target)), input.Path)
 }
 
-func (a *App) SaveCLISyncFileContent(appID string, path string, content string) error {
+func (a *App) SaveCLISyncFile(input SaveCLISyncFileInput) error {
 	if a.cli == nil {
 		return fmt.Errorf("cli sync service is not ready")
 	}
-	return a.cli.WriteConfigFile(cliconfig.App(appID), path, content)
+	return a.cli.WriteConfigFile(cliconfig.App(strings.TrimSpace(input.Target)), input.Path, input.Content)
 }
 
-func (a *App) SyncCodexAccountToKiloAuth(accountID string) (auth.KiloAuthSyncResult, error) {
-	a.log.Info("sync", "syncing account to Kilo CLI auth: "+accountID)
-	result, err := a.auth.SyncCodexAccountToKiloAuth(accountID)
+func (a *App) SyncAccountAuth(accountID string, target string) (auth.AuthSyncResult, error) {
+	a.log.Info("sync", "syncing account auth target="+target+" accountID="+accountID)
+	result, err := a.auth.SyncAccountAuth(accountID, auth.AuthSyncTarget(target))
 	if err != nil {
-		a.log.Error("sync", "Kilo CLI sync failed for "+accountID+": "+err.Error())
-		return auth.KiloAuthSyncResult{}, err
+		a.log.Error("sync", "auth sync failed for "+accountID+" target="+target+": "+err.Error())
+		return auth.AuthSyncResult{}, err
 	}
-	a.log.Info("sync", "Kilo CLI sync completed for "+accountID+" -> "+result.TargetPath)
+	a.log.Info("sync", "auth sync completed for "+accountID+" target="+target+" -> "+result.TargetPath)
 	return result, nil
 }
 
-func (a *App) SyncCodexAccountToCodexCLI(accountID string) (auth.CodexAuthSyncResult, error) {
-	a.log.Info("sync", "syncing account to Codex CLI auth: "+accountID)
-	result, err := a.auth.SyncCodexAccountToCodexCLI(accountID)
-	if err != nil {
-		a.log.Error("sync", "Codex CLI sync failed for "+accountID+": "+err.Error())
-		return auth.CodexAuthSyncResult{}, err
-	}
-	a.log.Info("sync", "Codex CLI sync completed for "+accountID+" -> "+result.TargetPath)
-	return result, nil
-}
-
-func (a *App) SyncCodexAccountToOpencodeAuth(accountID string) (auth.OpencodeAuthSyncResult, error) {
-	a.log.Info("sync", "syncing account to Opencode auth: "+accountID)
-	result, err := a.auth.SyncCodexAccountToOpencodeAuth(accountID)
-	if err != nil {
-		a.log.Error("sync", "Opencode sync failed for "+accountID+": "+err.Error())
-		return auth.OpencodeAuthSyncResult{}, err
-	}
-	a.log.Info("sync", "Opencode sync completed for "+accountID+" -> "+result.TargetPath)
-	return result, nil
-}
-
-func (a *App) DeleteAccount(accountID string) error {
-	a.log.Info("account", "deleting account "+accountID)
-	return a.store.DeleteAccount(accountID)
-}
-
-func (a *App) ToggleAccount(accountID string, enabled bool) error {
+func (a *App) setAccountEnabled(accountID string, enabled bool) error {
 	now := time.Now().Unix()
 	return a.store.UpdateAccount(accountID, func(account *config.Account) {
 		previousState := account.HealthState
@@ -638,7 +723,7 @@ func (a *App) ImportAccounts(accounts []config.Account) (int, error) {
 	return imported, nil
 }
 
-func (a *App) ClearCooldown(accountID string) error {
+func (a *App) clearCooldown(accountID string) error {
 	if a.store == nil {
 		return fmt.Errorf("store is not ready")
 	}
@@ -669,15 +754,78 @@ func (a *App) stopCloudflaredRuntime() error {
 	return err
 }
 
-func (a *App) SetCloudflaredConfig(mode string, token string, useHTTP2 bool) error {
+func (a *App) proxyStatus(refreshCloudflared bool) ProxyStatus {
+	if a.store == nil {
+		return ProxyStatus{}
+	}
+
+	port := a.store.ProxyPort()
+	allowLAN := a.store.AllowLAN()
+	bindAddr := platform.ProxyBindAddress(allowLAN, port)
+	if a.proxy != nil && a.proxy.Running() {
+		if runningBindAddr := a.proxy.BindAddress(); runningBindAddr != "" {
+			bindAddr = runningBindAddr
+		}
+	}
+
+	cloudflaredConfig := a.store.Cloudflared()
+	cloudflaredStatus := cloudflared.Status{}
+	if a.cf != nil {
+		if refreshCloudflared {
+			cloudflaredStatus = a.cf.RefreshStatus()
+		} else {
+			cloudflaredStatus = a.cf.GetStatus()
+		}
+	}
+
+	return ProxyStatus{
+		Running:           a.proxy != nil && a.proxy.Running(),
+		Port:              port,
+		URL:               platform.ProxyURL(port),
+		BindAddress:       bindAddr,
+		AllowLAN:          allowLAN,
+		AutoStartProxy:    a.store.AutoStartProxy(),
+		ProxyAPIKey:       a.store.ProxyAPIKey(),
+		AuthorizationMode: a.store.AuthorizationMode(),
+		SchedulingMode:    string(a.store.SchedulingMode()),
+		Cloudflared: ProxyCloudflaredStatus{
+			Enabled:   cloudflaredConfig.Enabled,
+			Mode:      string(cloudflaredConfig.Mode),
+			Token:     cloudflaredConfig.Token,
+			UseHTTP2:  cloudflaredConfig.UseHTTP2,
+			Installed: cloudflaredStatus.Installed,
+			Version:   cloudflaredStatus.Version,
+			Running:   cloudflaredStatus.Running,
+			URL:       cloudflaredStatus.URL,
+			Error:     cloudflaredStatus.Error,
+		},
+	}
+}
+
+func (a *App) UpdateCloudflaredSettings(input UpdateCloudflaredSettingsInput) error {
 	if a.store == nil {
 		return fmt.Errorf("store is not ready")
 	}
+	settings := a.store.Cloudflared()
+	mode := string(settings.Mode)
+	token := settings.Token
+	useHTTP2 := settings.UseHTTP2
+
+	if input.Mode != nil {
+		mode = strings.TrimSpace(*input.Mode)
+	}
+	if input.Token != nil {
+		token = *input.Token
+	}
+	if input.UseHTTP2 != nil {
+		useHTTP2 = *input.UseHTTP2
+	}
+
 	if err := a.store.SetCloudflaredConfig(config.CloudflaredMode(mode), token, useHTTP2); err != nil {
 		return err
 	}
-	settings := a.store.Cloudflared()
-	a.log.Info("cloudflared", fmt.Sprintf("cloudflared config updated mode=%q useHttp2=%t", settings.Mode, settings.UseHTTP2))
+	updated := a.store.Cloudflared()
+	a.log.Info("cloudflared", fmt.Sprintf("cloudflared config updated mode=%q useHttp2=%t", updated.Mode, updated.UseHTTP2))
 	return nil
 }
 
@@ -699,7 +847,7 @@ func (a *App) SetModelAliases(aliases map[string]string) error {
 	return nil
 }
 
-func (a *App) InstallCloudflared() error {
+func (a *App) installCloudflaredRuntime() error {
 	if a.cf == nil {
 		return fmt.Errorf("cloudflared manager is not ready")
 	}
@@ -714,7 +862,7 @@ func (a *App) InstallCloudflared() error {
 	return nil
 }
 
-func (a *App) StartCloudflared() error {
+func (a *App) startCloudflaredTunnel() error {
 	if a.store == nil || a.cf == nil {
 		return fmt.Errorf("cloudflared manager is not ready")
 	}
@@ -733,7 +881,7 @@ func (a *App) StartCloudflared() error {
 	return nil
 }
 
-func (a *App) StopCloudflared() error {
+func (a *App) stopCloudflaredTunnel() error {
 	if a.store == nil || a.cf == nil {
 		return fmt.Errorf("cloudflared manager is not ready")
 	}
@@ -748,7 +896,10 @@ func (a *App) StopCloudflared() error {
 	return nil
 }
 
-func (a *App) StartProxy() error {
+func (a *App) startProxyRuntime() error {
+	if a.store == nil || a.proxy == nil {
+		return fmt.Errorf("proxy service is not ready")
+	}
 	defer a.syncTrayProxyState()
 	a.log.Info("proxy", "starting proxy service")
 	if err := a.proxy.Start(a.store.ProxyPort(), a.store.AllowLAN()); err != nil {
@@ -760,7 +911,10 @@ func (a *App) StartProxy() error {
 	return nil
 }
 
-func (a *App) StopProxy() error {
+func (a *App) stopProxyRuntime() error {
+	if a.proxy == nil {
+		return fmt.Errorf("proxy service is not ready")
+	}
 	defer a.syncTrayProxyState()
 	a.log.Info("proxy", "stopping proxy service")
 	if err := a.stopCloudflaredRuntime(); err != nil {
@@ -771,117 +925,139 @@ func (a *App) StopProxy() error {
 	return a.proxy.Stop(ctx)
 }
 
-func (a *App) SetProxyPort(port int) error {
-	defer a.syncTrayProxyState()
+func (a *App) UpdateProxySettings(input UpdateProxySettingsInput) (ProxySettingsUpdateResult, error) {
+	result := ProxySettingsUpdateResult{}
 	if a.store == nil {
-		return fmt.Errorf("store is not ready")
+		return result, fmt.Errorf("store is not ready")
 	}
+	if input.ProxyAPIKey != nil && input.RegenerateAPIKey {
+		return result, fmt.Errorf("proxyApiKey and regenerateApiKey cannot be set together")
+	}
+
+	runtimeSensitive := input.Port != nil || input.AllowLAN != nil
 	running := a.proxy != nil && a.proxy.Running()
 	restartCloudflared := a.store.Cloudflared().Enabled
-	if running && restartCloudflared {
-		if err := a.stopCloudflaredRuntime(); err != nil {
-			a.log.Warn("cloudflared", "cloudflared did not stop before proxy port change: "+err.Error())
+
+	if runtimeSensitive {
+		defer a.syncTrayProxyState()
+		if running && restartCloudflared {
+			if err := a.stopCloudflaredRuntime(); err != nil {
+				a.log.Warn("cloudflared", "cloudflared did not stop before proxy runtime update: "+err.Error())
+			}
+		}
+		if running {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := a.proxy.Stop(ctx); err != nil {
+				return result, err
+			}
 		}
 	}
-	if running {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := a.proxy.Stop(ctx); err != nil {
-			return err
+
+	if input.Port != nil {
+		if err := a.store.SetProxyPort(*input.Port); err != nil {
+			return result, err
 		}
+		a.log.Info("proxy", fmt.Sprintf("proxy port updated to %d", a.store.ProxyPort()))
 	}
-	if err := a.store.SetProxyPort(port); err != nil {
-		return err
+
+	if input.AllowLAN != nil {
+		if err := a.store.SetAllowLAN(*input.AllowLAN); err != nil {
+			return result, err
+		}
+		a.log.Info("proxy", fmt.Sprintf("proxy allowLan updated to %t", *input.AllowLAN))
 	}
-	a.log.Info("proxy", fmt.Sprintf("proxy port updated to %d", a.store.ProxyPort()))
-	if running {
+
+	if input.AutoStartProxy != nil {
+		if err := a.store.SetAutoStartProxy(*input.AutoStartProxy); err != nil {
+			return result, err
+		}
+		a.log.Info("proxy", fmt.Sprintf("proxy autoStartProxy updated to %t", *input.AutoStartProxy))
+	}
+
+	if input.ProxyAPIKey != nil {
+		normalized := strings.TrimSpace(*input.ProxyAPIKey)
+		if normalized == "" {
+			return result, fmt.Errorf("proxy API key cannot be empty")
+		}
+		if err := a.store.SetProxyAPIKey(normalized); err != nil {
+			return result, err
+		}
+		a.log.Info("proxy", "proxy API key updated")
+	}
+
+	if input.RegenerateAPIKey {
+		apiKey, err := generateProxyAPIKey()
+		if err != nil {
+			return result, err
+		}
+		if err := a.store.SetProxyAPIKey(apiKey); err != nil {
+			return result, err
+		}
+		result.GeneratedAPIKey = apiKey
+		a.log.Info("proxy", "proxy API key regenerated")
+	}
+
+	if input.AuthorizationMode != nil {
+		if err := a.store.SetAuthorizationMode(*input.AuthorizationMode); err != nil {
+			return result, err
+		}
+		a.log.Info("proxy", fmt.Sprintf("proxy authorizationMode updated to %t", *input.AuthorizationMode))
+	}
+
+	if input.SchedulingMode != nil {
+		if err := a.store.SetSchedulingMode(config.SchedulingMode(*input.SchedulingMode)); err != nil {
+			return result, err
+		}
+		a.log.Info("proxy", fmt.Sprintf("proxy schedulingMode updated to %q", string(a.store.SchedulingMode())))
+	}
+
+	if runtimeSensitive && running {
 		if err := a.proxy.Start(a.store.ProxyPort(), a.store.AllowLAN()); err != nil {
-			return err
+			return result, err
 		}
+		result.RestartedProxy = true
 		if restartCloudflared {
+			result.RestartedCloudflared = true
 			if err := a.startCloudflaredIfEnabled(); err != nil {
-				a.log.Warn("cloudflared", "cloudflared did not restart after proxy port change: "+err.Error())
+				a.log.Warn("cloudflared", "cloudflared did not restart after proxy runtime update: "+err.Error())
 			}
 		}
 	}
-	return nil
+
+	return result, nil
 }
 
-func (a *App) SetAllowLAN(enabled bool) error {
-	defer a.syncTrayProxyState()
-	if a.store == nil {
-		return fmt.Errorf("store is not ready")
-	}
-	running := a.proxy != nil && a.proxy.Running()
-	restartCloudflared := a.store.Cloudflared().Enabled
-	if running && restartCloudflared {
-		if err := a.stopCloudflaredRuntime(); err != nil {
-			a.log.Warn("cloudflared", "cloudflared did not stop before proxy network update: "+err.Error())
+func (a *App) RunProxyAction(action string) error {
+	normalized := strings.ToLower(strings.TrimSpace(action))
+
+	switch normalized {
+	case proxyActionStart:
+		return a.startProxyRuntime()
+	case proxyActionStop:
+		return a.stopProxyRuntime()
+	case proxyActionToggle:
+		if a.proxy == nil {
+			return fmt.Errorf("proxy service is not ready")
 		}
+		return toggleProxyByState(a.proxy.Running(), a.startProxyRuntime, a.stopProxyRuntime)
+	default:
+		return fmt.Errorf("unsupported proxy action: %s", action)
 	}
-	if running {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := a.proxy.Stop(ctx); err != nil {
-			return err
-		}
-	}
-	if err := a.store.SetAllowLAN(enabled); err != nil {
-		return err
-	}
-	a.log.Info("proxy", fmt.Sprintf("proxy allowLan updated to %t", enabled))
-	if running {
-		if err := a.proxy.Start(a.store.ProxyPort(), enabled); err != nil {
-			return err
-		}
-		if restartCloudflared {
-			if err := a.startCloudflaredIfEnabled(); err != nil {
-				a.log.Warn("cloudflared", "cloudflared did not restart after proxy network update: "+err.Error())
-			}
-		}
-	}
-	return nil
 }
 
-func (a *App) SetAutoStartProxy(enabled bool) error {
-	if a.store == nil {
-		return fmt.Errorf("store is not ready")
-	}
-	if err := a.store.SetAutoStartProxy(enabled); err != nil {
-		return err
-	}
-	a.log.Info("proxy", fmt.Sprintf("proxy autoStartProxy updated to %t", enabled))
-	return nil
-}
-
-func (a *App) ToggleProxyFromTray() error {
+func (a *App) toggleProxyFromTray() error {
 	if a.proxy == nil {
 		return fmt.Errorf("proxy service is not ready")
 	}
-	if err := toggleProxyByState(a.proxy.Running(), a.StartProxy, a.StopProxy); err != nil {
+	if err := a.RunProxyAction(proxyActionToggle); err != nil {
 		return err
 	}
 	running := a.proxy.Running()
-	a.syncTrayProxyState()
 	a.emit("app:proxy-state-changed", map[string]any{
 		"source":  "tray",
 		"running": running,
 	})
-	return nil
-}
-
-func (a *App) SetProxyAPIKey(apiKey string) error {
-	if a.store == nil {
-		return fmt.Errorf("store is not ready")
-	}
-	normalized := strings.TrimSpace(apiKey)
-	if normalized == "" {
-		return fmt.Errorf("proxy API key cannot be empty")
-	}
-	if err := a.store.SetProxyAPIKey(normalized); err != nil {
-		return err
-	}
-	a.log.Info("proxy", "proxy API key updated")
 	return nil
 }
 
@@ -893,44 +1069,36 @@ func generateProxyAPIKey() (string, error) {
 	return "sk-cliro_" + hex.EncodeToString(raw), nil
 }
 
-func (a *App) RegenerateProxyAPIKey() (string, error) {
-	if a.store == nil {
-		return "", fmt.Errorf("store is not ready")
+func (a *App) RunCloudflaredAction(action string) (ProxyStatus, error) {
+	normalized := strings.ToLower(strings.TrimSpace(action))
+
+	switch normalized {
+	case cloudflaredActionInstall:
+		if err := a.installCloudflaredRuntime(); err != nil {
+			return ProxyStatus{}, err
+		}
+		if a.cf != nil {
+			a.cf.RefreshStatus()
+		}
+		return a.proxyStatus(false), nil
+	case cloudflaredActionStart:
+		if err := a.startCloudflaredTunnel(); err != nil {
+			return ProxyStatus{}, err
+		}
+		return a.proxyStatus(false), nil
+	case cloudflaredActionStop:
+		if err := a.stopCloudflaredTunnel(); err != nil {
+			return ProxyStatus{}, err
+		}
+		return a.proxyStatus(false), nil
+	case cloudflaredActionRefreshStatus:
+		return a.proxyStatus(true), nil
+	default:
+		return ProxyStatus{}, fmt.Errorf("unsupported cloudflared action: %s", action)
 	}
-	apiKey, err := generateProxyAPIKey()
-	if err != nil {
-		return "", err
-	}
-	if err := a.store.SetProxyAPIKey(apiKey); err != nil {
-		return "", err
-	}
-	a.log.Info("proxy", "proxy API key regenerated")
-	return apiKey, nil
 }
 
-func (a *App) SetAuthorizationMode(enabled bool) error {
-	if a.store == nil {
-		return fmt.Errorf("store is not ready")
-	}
-	if err := a.store.SetAuthorizationMode(enabled); err != nil {
-		return err
-	}
-	a.log.Info("proxy", fmt.Sprintf("proxy authorizationMode updated to %t", enabled))
-	return nil
-}
-
-func (a *App) SetSchedulingMode(mode string) error {
-	if a.store == nil {
-		return fmt.Errorf("store is not ready")
-	}
-	if err := a.store.SetSchedulingMode(config.SchedulingMode(mode)); err != nil {
-		return err
-	}
-	a.log.Info("proxy", fmt.Sprintf("proxy schedulingMode updated to %q", string(a.store.SchedulingMode())))
-	return nil
-}
-
-func (a *App) ClearLogs() {
+func (a *App) clearLogs() {
 	if a.log == nil {
 		return
 	}
@@ -945,7 +1113,7 @@ func (a *App) OpenExternalURL(rawURL string) {
 	wruntime.BrowserOpenURL(a.ctx, rawURL)
 }
 
-func (a *App) OpenDataDir() error {
+func (a *App) openDataDir() error {
 	dataDir, err := resolveDataDir()
 	if err != nil {
 		return err
@@ -970,6 +1138,28 @@ func (a *App) OpenDataDir() error {
 	return nil
 }
 
+func (a *App) RunSystemAction(input RunSystemActionInput) error {
+	action := strings.ToLower(strings.TrimSpace(input.Action))
+
+	switch action {
+	case systemActionConfirmQuit:
+		return a.requestQuit()
+	case systemActionHideToTray:
+		a.hideToTray()
+		return nil
+	case systemActionRestoreWindow:
+		a.restoreWindow()
+		return nil
+	case systemActionOpenDataDir:
+		return a.openDataDir()
+	case systemActionClearLogs:
+		a.clearLogs()
+		return nil
+	default:
+		return fmt.Errorf("unsupported system action: %s", input.Action)
+	}
+}
+
 func (a *App) beforeCloseGuard(ctx context.Context) bool {
 	if a.ctx == nil && ctx != nil {
 		a.ctx = ctx
@@ -981,11 +1171,7 @@ func (a *App) beforeCloseGuard(ctx context.Context) bool {
 	return true
 }
 
-func (a *App) ConfirmQuit() error {
-	return a.requestQuit()
-}
-
-func (a *App) HideToTray() {
+func (a *App) hideToTray() {
 	if a.ctx == nil {
 		return
 	}
@@ -994,12 +1180,12 @@ func (a *App) HideToTray() {
 	}
 }
 
-func (a *App) RestoreWindow() {
+func (a *App) restoreWindow() {
 	a.bringWindowToFront()
 	a.emit("app:window-restored")
 }
 
-func (a *App) ExitFromTray() error {
+func (a *App) exitFromTray() error {
 	return a.requestQuit()
 }
 
@@ -1084,13 +1270,13 @@ func (a *App) initTray(ctx context.Context) {
 			})
 		},
 		OnOpen: func() {
-			a.RestoreWindow()
+			a.restoreWindow()
 		},
 		OnToggleProxy: func() error {
-			return a.ToggleProxyFromTray()
+			return a.toggleProxyFromTray()
 		},
 		OnExit: func() {
-			_ = a.ExitFromTray()
+			_ = a.exitFromTray()
 		},
 		IsProxyRunning: func() bool {
 			return a.proxy != nil && a.proxy.Running()
@@ -1221,7 +1407,7 @@ func (a *App) handleKiroProtocolURL(rawURL string) {
 	a.log.Info("app", "submitting code to session "+targetSessionID)
 
 	// Submit the code
-	if err := a.auth.SubmitKiroAuthCode(targetSessionID, code); err != nil {
+	if err := a.auth.SubmitAuthCode("kiro", targetSessionID, code); err != nil {
 		a.log.Error("app", "failed to submit Kiro auth code: "+err.Error())
 		wruntime.EventsEmit(a.ctx, "app:notification", map[string]interface{}{
 			"type":    "error",

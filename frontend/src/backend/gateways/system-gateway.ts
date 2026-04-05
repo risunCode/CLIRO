@@ -1,13 +1,14 @@
-import { ConfirmQuit, GetHostName, GetState, HideToTray, OpenDataDir, OpenExternalURL, RestoreWindow } from '@/backend/client/wails-client'
-import type { AppState, UpdateInfo } from '@/backend/models/system'
+import { wailsClient } from '@/backend/client/wails-client'
+import type { AppState, SystemAction, UpdateInfo } from '@/backend/models/system'
 
 export const systemApi = {
-  getState: (): Promise<AppState> => GetState() as Promise<AppState>,
+  getState: (): Promise<AppState> => wailsClient.system.getState() as Promise<AppState>,
   getUpdateInfo: async (): Promise<UpdateInfo | null> => null,
-  getHostName: async (): Promise<string> => String(await GetHostName()),
-  openExternalURL: (url: string): Promise<void> => OpenExternalURL(url),
-  openDataDir: (): Promise<void> => OpenDataDir(),
-  confirmQuit: (): Promise<void> => ConfirmQuit(),
-  hideToTray: (): Promise<void> => HideToTray(),
-  restoreWindow: (): Promise<void> => RestoreWindow()
+  getHostName: async (): Promise<string> => String(await wailsClient.system.getHostName()),
+  runAction: (action: SystemAction): Promise<void> => wailsClient.system.runAction({ action }),
+  openExternalURL: (url: string): Promise<void> => wailsClient.system.openExternalURL(url),
+  confirmQuit: (): Promise<void> => wailsClient.system.runAction({ action: 'confirm-quit' }),
+  hideToTray: (): Promise<void> => wailsClient.system.runAction({ action: 'hide-to-tray' }),
+  restoreWindow: (): Promise<void> => wailsClient.system.runAction({ action: 'restore-window' }),
+  openDataDir: (): Promise<void> => wailsClient.system.runAction({ action: 'open-data-dir' }),
 }

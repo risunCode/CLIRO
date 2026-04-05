@@ -1,5 +1,10 @@
-import { asBoolean, asNumber, asRecord, asString } from '@/backend/compat/coerce'
-import type { CliSyncAppID, CliSyncFile, CliSyncResult, CliSyncStatus, LocalModelCatalogItem, ProxyStatus } from '@/features/router/types'
+import type {
+  WailsCliSyncResult,
+  WailsCliSyncStatus,
+  WailsModelCatalogItem,
+  WailsProxyStatus,
+} from '@/backend/models/wails'
+import type { CliSyncAppID, CliSyncResult, CliSyncStatus, LocalModelCatalogItem, ProxyStatus } from '@/features/router/types'
 
 const toCliSyncAppID = (value: string): CliSyncAppID | null => {
   if (value === 'claude-code' || value === 'opencode-cli' || value === 'kilo-cli' || value === 'codex-ai') {
@@ -8,83 +13,76 @@ const toCliSyncAppID = (value: string): CliSyncAppID | null => {
   return null
 }
 
-const toCliSyncFile = (payload: unknown): CliSyncFile => {
-  const record = asRecord(payload)
-  return {
-    name: asString(record.name),
-    path: asString(record.path)
-  }
-}
-
-export const toProxyStatus = (payload: unknown): ProxyStatus => {
-  const record = asRecord(payload)
-  const cloudflared = asRecord(record.cloudflared)
-  const cloudflaredMode = asString(cloudflared.mode) === 'auth' ? 'auth' : 'quick'
+export const toProxyStatus = (payload: WailsProxyStatus): ProxyStatus => {
+  const cloudflaredMode = payload.cloudflared.mode === 'auth' ? 'auth' : 'quick'
 
   return {
-    running: asBoolean(record.running),
-    port: asNumber(record.port),
-    url: asString(record.url),
-    bindAddress: asString(record.bindAddress),
-    allowLan: asBoolean(record.allowLan),
-    autoStartProxy: asBoolean(record.autoStartProxy),
-    proxyApiKey: asString(record.proxyApiKey),
-    authorizationMode: asBoolean(record.authorizationMode),
-    schedulingMode: asString(record.schedulingMode) || 'balance',
+    running: payload.running,
+    port: payload.port,
+    url: payload.url,
+    bindAddress: payload.bindAddress,
+    allowLan: payload.allowLan,
+    autoStartProxy: payload.autoStartProxy,
+    proxyApiKey: payload.proxyApiKey,
+    authorizationMode: payload.authorizationMode,
+    schedulingMode: payload.schedulingMode || 'balance',
     cloudflared: {
-      enabled: asBoolean(cloudflared.enabled),
+      enabled: payload.cloudflared.enabled,
       mode: cloudflaredMode,
-      token: asString(cloudflared.token),
-      useHttp2: !('useHttp2' in cloudflared) || asBoolean(cloudflared.useHttp2),
-      installed: asBoolean(cloudflared.installed),
-      version: asString(cloudflared.version),
-      running: asBoolean(cloudflared.running),
-      url: asString(cloudflared.url),
-      error: asString(cloudflared.error)
-    }
+      token: payload.cloudflared.token,
+      useHttp2: payload.cloudflared.useHttp2,
+      installed: payload.cloudflared.installed,
+      version: payload.cloudflared.version,
+      running: payload.cloudflared.running,
+      url: payload.cloudflared.url,
+      error: payload.cloudflared.error,
+    },
   }
 }
 
-export const toCliSyncStatus = (payload: unknown): CliSyncStatus | null => {
-  const record = asRecord(payload)
-  const id = toCliSyncAppID(asString(record.id))
+export const toCliSyncStatus = (payload: WailsCliSyncStatus): CliSyncStatus | null => {
+  const id = toCliSyncAppID(payload.id)
   if (!id) {
     return null
   }
-  const files = Array.isArray(record.files) ? record.files.map(toCliSyncFile) : []
+
   return {
     id,
-    label: asString(record.label),
-    installed: asBoolean(record.installed),
-    installPath: asString(record.installPath) || undefined,
-    version: asString(record.version) || undefined,
-    synced: asBoolean(record.synced),
-    currentBaseUrl: asString(record.currentBaseUrl) || undefined,
-    currentModel: asString(record.currentModel) || undefined,
-    files
+    label: payload.label,
+    installed: payload.installed,
+    installPath: payload.installPath || undefined,
+    version: payload.version || undefined,
+    synced: payload.synced,
+    currentBaseUrl: payload.currentBaseUrl || undefined,
+    currentModel: payload.currentModel || undefined,
+    files: payload.files.map((file) => ({
+      name: file.name,
+      path: file.path,
+    })),
   }
 }
 
-export const toCliSyncResult = (payload: unknown): CliSyncResult => {
-  const record = asRecord(payload)
-  const files = Array.isArray(record.files) ? record.files.map(toCliSyncFile) : []
-  const id = toCliSyncAppID(asString(record.id))
+export const toCliSyncResult = (payload: WailsCliSyncResult): CliSyncResult => {
+  const id = toCliSyncAppID(payload.id)
   if (!id) {
     throw new Error('Unsupported CLI sync result id')
   }
+
   return {
     id,
-    label: asString(record.label),
-    model: asString(record.model) || undefined,
-    currentBaseUrl: asString(record.currentBaseUrl) || undefined,
-    files
+    label: payload.label,
+    model: payload.model || undefined,
+    currentBaseUrl: payload.currentBaseUrl || undefined,
+    files: payload.files.map((file) => ({
+      name: file.name,
+      path: file.path,
+    })),
   }
 }
 
-export const toLocalModelCatalogItem = (payload: unknown): LocalModelCatalogItem => {
-  const record = asRecord(payload)
+export const toLocalModelCatalogItem = (payload: WailsModelCatalogItem): LocalModelCatalogItem => {
   return {
-    id: asString(record.id),
-    ownedBy: asString(record.ownedBy)
+    id: payload.id,
+    ownedBy: payload.ownedBy,
   }
 }

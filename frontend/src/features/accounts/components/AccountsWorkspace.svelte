@@ -25,10 +25,7 @@
     Account,
     AuthSession,
     AccountSyncResult,
-    CodexAuthSyncResult,
     KiroAuthSession,
-    KiloAuthSyncResult,
-    OpencodeAuthSyncResult,
     SyncTargetID
   } from '@/features/accounts/types'
   import { formatNumber } from '@/shared/utils/formatters'
@@ -52,9 +49,7 @@
   export let onBulkToggleAccounts: (accountIds: string[], enabled: boolean) => Promise<void>
   export let onBulkDeleteAccounts: (accountIds: string[]) => Promise<void>
   export let onImportAccounts: (accounts: Account[]) => Promise<number>
-  export let onSyncCodexAccountToKiloAuth: (accountId: string) => Promise<KiloAuthSyncResult>
-  export let onSyncCodexAccountToOpencodeAuth: (accountId: string) => Promise<OpencodeAuthSyncResult>
-  export let onSyncCodexAccountToCodexCLI: (accountId: string) => Promise<CodexAuthSyncResult>
+  export let onSyncAccountAuth: (accountId: string, target: SyncTargetID) => Promise<AccountSyncResult>
   export let onRefreshAccountWithQuota: (accountId: string) => Promise<void>
   export let onDeleteAccount: (accountId: string) => Promise<void>
   export let onSubmitCodexAuthCode: (sessionId: string, code: string) => Promise<void>
@@ -208,9 +203,7 @@
 
     try {
       syncResult = await runAccountSyncByTarget(syncAccountID, target, {
-        toKilo: onSyncCodexAccountToKiloAuth,
-        toOpencode: onSyncCodexAccountToOpencodeAuth,
-        toCodex: onSyncCodexAccountToCodexCLI
+        sync: onSyncAccountAuth
       })
     } catch (error) {
       syncError = getErrorMessage(error, `Unable to sync account to ${syncTargetName(target)} auth file.`)

@@ -1,96 +1,18 @@
-export namespace authtoken {
-	
-	export class CodexAuthSyncResult {
-	    targetPath: string;
-	    backupPath?: string;
-	    fileExisted: boolean;
-	    backupCreated: boolean;
-	    updatedFields: string[];
-	    accountID: string;
-	    provider: string;
-	    syncedAt: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new CodexAuthSyncResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targetPath = source["targetPath"];
-	        this.backupPath = source["backupPath"];
-	        this.fileExisted = source["fileExisted"];
-	        this.backupCreated = source["backupCreated"];
-	        this.updatedFields = source["updatedFields"];
-	        this.accountID = source["accountID"];
-	        this.provider = source["provider"];
-	        this.syncedAt = source["syncedAt"];
-	    }
-	}
-	export class KiloAuthSyncResult {
-	    targetPath: string;
-	    fileExisted: boolean;
-	    openAICreated: boolean;
-	    updatedFields: string[];
-	    accountID: string;
-	    provider: string;
-	    syncedExpires: number;
-	    syncedExpiresAt?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new KiloAuthSyncResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targetPath = source["targetPath"];
-	        this.fileExisted = source["fileExisted"];
-	        this.openAICreated = source["openAICreated"];
-	        this.updatedFields = source["updatedFields"];
-	        this.accountID = source["accountID"];
-	        this.provider = source["provider"];
-	        this.syncedExpires = source["syncedExpires"];
-	        this.syncedExpiresAt = source["syncedExpiresAt"];
-	    }
-	}
-	export class OpencodeAuthSyncResult {
-	    targetPath: string;
-	    fileExisted: boolean;
-	    openAICreated: boolean;
-	    updatedFields: string[];
-	    accountID: string;
-	    provider: string;
-	    syncedExpires: number;
-	    syncedExpiresAt?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new OpencodeAuthSyncResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targetPath = source["targetPath"];
-	        this.fileExisted = source["fileExisted"];
-	        this.openAICreated = source["openAICreated"];
-	        this.updatedFields = source["updatedFields"];
-	        this.accountID = source["accountID"];
-	        this.provider = source["provider"];
-	        this.syncedExpires = source["syncedExpires"];
-	        this.syncedExpiresAt = source["syncedExpiresAt"];
-	    }
-	}
-
-}
-
-export namespace codex {
+export namespace auth {
 	
 	export class AuthSessionView {
 	    sessionId: string;
 	    authUrl: string;
-	    callbackUrl: string;
+	    callbackUrl?: string;
+	    verificationUrl?: string;
+	    userCode?: string;
+	    expiresAt?: number;
 	    status: string;
 	    error?: string;
 	    accountId?: string;
 	    email?: string;
+	    authMethod?: string;
+	    provider?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AuthSessionView(source);
@@ -101,17 +23,27 @@ export namespace codex {
 	        this.sessionId = source["sessionId"];
 	        this.authUrl = source["authUrl"];
 	        this.callbackUrl = source["callbackUrl"];
+	        this.verificationUrl = source["verificationUrl"];
+	        this.userCode = source["userCode"];
+	        this.expiresAt = source["expiresAt"];
 	        this.status = source["status"];
 	        this.error = source["error"];
 	        this.accountId = source["accountId"];
 	        this.email = source["email"];
+	        this.authMethod = source["authMethod"];
+	        this.provider = source["provider"];
 	    }
 	}
 	export class AuthStart {
 	    sessionId: string;
 	    authUrl: string;
-	    callbackUrl: string;
+	    callbackUrl?: string;
+	    verificationUrl?: string;
+	    userCode?: string;
+	    expiresAt?: number;
 	    status: string;
+	    authMethod?: string;
+	    provider?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AuthStart(source);
@@ -122,7 +54,46 @@ export namespace codex {
 	        this.sessionId = source["sessionId"];
 	        this.authUrl = source["authUrl"];
 	        this.callbackUrl = source["callbackUrl"];
+	        this.verificationUrl = source["verificationUrl"];
+	        this.userCode = source["userCode"];
+	        this.expiresAt = source["expiresAt"];
 	        this.status = source["status"];
+	        this.authMethod = source["authMethod"];
+	        this.provider = source["provider"];
+	    }
+	}
+	export class AuthSyncResult {
+	    target: string;
+	    targetPath: string;
+	    fileExisted: boolean;
+	    openAICreated: boolean;
+	    backupPath?: string;
+	    backupCreated: boolean;
+	    updatedFields: string[];
+	    accountID: string;
+	    provider: string;
+	    syncedExpires: number;
+	    syncedExpiresAt?: string;
+	    syncedAt?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuthSyncResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
+	        this.targetPath = source["targetPath"];
+	        this.fileExisted = source["fileExisted"];
+	        this.openAICreated = source["openAICreated"];
+	        this.backupPath = source["backupPath"];
+	        this.backupCreated = source["backupCreated"];
+	        this.updatedFields = source["updatedFields"];
+	        this.accountID = source["accountID"];
+	        this.provider = source["provider"];
+	        this.syncedExpires = source["syncedExpires"];
+	        this.syncedExpiresAt = source["syncedExpiresAt"];
+	        this.syncedAt = source["syncedAt"];
 	    }
 	}
 
@@ -331,69 +302,6 @@ export namespace config {
 
 }
 
-export namespace kiro {
-	
-	export class AuthSessionView {
-	    sessionId: string;
-	    authUrl: string;
-	    verificationUrl?: string;
-	    userCode?: string;
-	    expiresAt?: number;
-	    status: string;
-	    error?: string;
-	    accountId?: string;
-	    email?: string;
-	    authMethod?: string;
-	    provider?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new AuthSessionView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.sessionId = source["sessionId"];
-	        this.authUrl = source["authUrl"];
-	        this.verificationUrl = source["verificationUrl"];
-	        this.userCode = source["userCode"];
-	        this.expiresAt = source["expiresAt"];
-	        this.status = source["status"];
-	        this.error = source["error"];
-	        this.accountId = source["accountId"];
-	        this.email = source["email"];
-	        this.authMethod = source["authMethod"];
-	        this.provider = source["provider"];
-	    }
-	}
-	export class AuthStart {
-	    sessionId: string;
-	    authUrl: string;
-	    verificationUrl?: string;
-	    userCode?: string;
-	    expiresAt?: number;
-	    status: string;
-	    authMethod?: string;
-	    provider?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new AuthStart(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.sessionId = source["sessionId"];
-	        this.authUrl = source["authUrl"];
-	        this.verificationUrl = source["verificationUrl"];
-	        this.userCode = source["userCode"];
-	        this.expiresAt = source["expiresAt"];
-	        this.status = source["status"];
-	        this.authMethod = source["authMethod"];
-	        this.provider = source["provider"];
-	    }
-	}
-
-}
-
 export namespace logger {
 	
 	export class Entry {
@@ -425,6 +333,294 @@ export namespace logger {
 
 export namespace main {
 	
+	export class CLISyncFile {
+	    name: string;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CLISyncFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	    }
+	}
+	export class CLISyncFileInput {
+	    target: string;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CLISyncFileInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
+	        this.path = source["path"];
+	    }
+	}
+	export class CLISyncResult {
+	    id: string;
+	    label: string;
+	    model?: string;
+	    currentBaseUrl?: string;
+	    files: CLISyncFile[];
+	
+	    static createFrom(source: any = {}) {
+	        return new CLISyncResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.model = source["model"];
+	        this.currentBaseUrl = source["currentBaseUrl"];
+	        this.files = this.convertValues(source["files"], CLISyncFile);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CLISyncStatus {
+	    id: string;
+	    label: string;
+	    installed: boolean;
+	    installPath?: string;
+	    version?: string;
+	    synced: boolean;
+	    currentBaseUrl?: string;
+	    currentModel?: string;
+	    files: CLISyncFile[];
+	
+	    static createFrom(source: any = {}) {
+	        return new CLISyncStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.installed = source["installed"];
+	        this.installPath = source["installPath"];
+	        this.version = source["version"];
+	        this.synced = source["synced"];
+	        this.currentBaseUrl = source["currentBaseUrl"];
+	        this.currentModel = source["currentModel"];
+	        this.files = this.convertValues(source["files"], CLISyncFile);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ModelCatalogItem {
+	    id: string;
+	    ownedBy: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelCatalogItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.ownedBy = source["ownedBy"];
+	    }
+	}
+	export class ProxyCloudflaredStatus {
+	    enabled: boolean;
+	    mode: string;
+	    token: string;
+	    useHttp2: boolean;
+	    installed: boolean;
+	    version?: string;
+	    running: boolean;
+	    url?: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProxyCloudflaredStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.mode = source["mode"];
+	        this.token = source["token"];
+	        this.useHttp2 = source["useHttp2"];
+	        this.installed = source["installed"];
+	        this.version = source["version"];
+	        this.running = source["running"];
+	        this.url = source["url"];
+	        this.error = source["error"];
+	    }
+	}
+	export class ProxySettingsUpdateResult {
+	    restartedProxy: boolean;
+	    restartedCloudflared: boolean;
+	    generatedApiKey?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProxySettingsUpdateResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.restartedProxy = source["restartedProxy"];
+	        this.restartedCloudflared = source["restartedCloudflared"];
+	        this.generatedApiKey = source["generatedApiKey"];
+	    }
+	}
+	export class ProxyStatus {
+	    running: boolean;
+	    port: number;
+	    url: string;
+	    bindAddress: string;
+	    allowLan: boolean;
+	    autoStartProxy: boolean;
+	    proxyApiKey: string;
+	    authorizationMode: boolean;
+	    schedulingMode: string;
+	    cloudflared: ProxyCloudflaredStatus;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProxyStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.port = source["port"];
+	        this.url = source["url"];
+	        this.bindAddress = source["bindAddress"];
+	        this.allowLan = source["allowLan"];
+	        this.autoStartProxy = source["autoStartProxy"];
+	        this.proxyApiKey = source["proxyApiKey"];
+	        this.authorizationMode = source["authorizationMode"];
+	        this.schedulingMode = source["schedulingMode"];
+	        this.cloudflared = this.convertValues(source["cloudflared"], ProxyCloudflaredStatus);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RunAccountActionInput {
+	    accountId: string;
+	    action: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunAccountActionInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.accountId = source["accountId"];
+	        this.action = source["action"];
+	    }
+	}
+	export class RunCLISyncInput {
+	    target: string;
+	    model?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunCLISyncInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
+	        this.model = source["model"];
+	    }
+	}
+	export class RunQuotaActionInput {
+	    action: string;
+	    accountId?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunQuotaActionInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.action = source["action"];
+	        this.accountId = source["accountId"];
+	    }
+	}
+	export class RunSystemActionInput {
+	    action: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunSystemActionInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.action = source["action"];
+	    }
+	}
+	export class SaveCLISyncFileInput {
+	    target: string;
+	    path: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SaveCLISyncFileInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
+	        this.path = source["path"];
+	        this.content = source["content"];
+	    }
+	}
 	export class State {
 	    authMode: string;
 	    proxyPort: number;
@@ -484,6 +680,46 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class UpdateCloudflaredSettingsInput {
+	    mode?: string;
+	    token?: string;
+	    useHttp2?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateCloudflaredSettingsInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.token = source["token"];
+	        this.useHttp2 = source["useHttp2"];
+	    }
+	}
+	export class UpdateProxySettingsInput {
+	    port?: number;
+	    allowLan?: boolean;
+	    autoStartProxy?: boolean;
+	    proxyApiKey?: string;
+	    regenerateApiKey?: boolean;
+	    authorizationMode?: boolean;
+	    schedulingMode?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateProxySettingsInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.port = source["port"];
+	        this.allowLan = source["allowLan"];
+	        this.autoStartProxy = source["autoStartProxy"];
+	        this.proxyApiKey = source["proxyApiKey"];
+	        this.regenerateApiKey = source["regenerateApiKey"];
+	        this.authorizationMode = source["authorizationMode"];
+	        this.schedulingMode = source["schedulingMode"];
+	    }
 	}
 
 }

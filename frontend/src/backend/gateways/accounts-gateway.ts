@@ -1,19 +1,30 @@
-import { ClearCooldown, DeleteAccount, ForceRefreshAllQuotas, GetAccounts, ImportAccounts, RefreshAccount, RefreshAccountWithQuota, RefreshAllQuotas, RefreshQuota, SyncCodexAccountToCodexCLI, SyncCodexAccountToKiloAuth, SyncCodexAccountToOpencodeAuth, ToggleAccount } from '@/backend/client/wails-client'
-import { toCodexAuthSyncResult, toKiloAuthSyncResult, toOpencodeAuthSyncResult } from '@/backend/compat/accounts-compat'
-import type { Account, CodexAuthSyncResult, KiloAuthSyncResult, OpencodeAuthSyncResult } from '@/features/accounts/types'
+import { wailsClient } from '@/backend/client/wails-client'
+import { toAccountSyncResult } from '@/backend/compat/accounts-compat'
+import type { Account, AccountAction, AccountSyncResult, QuotaAction, SyncTargetID } from '@/features/accounts/types'
+
+export interface RunAccountActionInput {
+  accountId: string
+  action: AccountAction
+}
+
+export interface RunQuotaActionInput {
+  action: QuotaAction
+  accountId?: string
+}
 
 export const accountsApi = {
-  getAccounts: (): Promise<Account[]> => GetAccounts(),
-  importAccounts: (accounts: Account[]): Promise<number> => ImportAccounts(accounts),
-  refreshAccount: (accountId: string): Promise<void> => RefreshAccount(accountId),
-  refreshAccountWithQuota: (accountId: string): Promise<void> => RefreshAccountWithQuota(accountId),
-  refreshQuota: (accountId: string): Promise<void> => RefreshQuota(accountId),
-  refreshAllQuotas: (): Promise<void> => RefreshAllQuotas(),
-  forceRefreshAllQuotas: (): Promise<void> => ForceRefreshAllQuotas(),
-  toggleAccount: (accountId: string, enabled: boolean): Promise<void> => ToggleAccount(accountId, enabled),
-  deleteAccount: (accountId: string): Promise<void> => DeleteAccount(accountId),
-  clearCooldown: (accountId: string): Promise<void> => ClearCooldown(accountId),
-  syncCodexAccountToKiloAuth: async (accountId: string): Promise<KiloAuthSyncResult> => toKiloAuthSyncResult(await SyncCodexAccountToKiloAuth(accountId)),
-  syncCodexAccountToOpencodeAuth: async (accountId: string): Promise<OpencodeAuthSyncResult> => toOpencodeAuthSyncResult(await SyncCodexAccountToOpencodeAuth(accountId)),
-  syncCodexAccountToCodexCLI: async (accountId: string): Promise<CodexAuthSyncResult> => toCodexAuthSyncResult(await SyncCodexAccountToCodexCLI(accountId))
+  getAccounts: (): Promise<Account[]> => wailsClient.accounts.getAccounts(),
+  importAccounts: (accounts: Account[]): Promise<number> => wailsClient.accounts.importAccounts(accounts),
+  runAccountAction: (input: RunAccountActionInput): Promise<void> =>
+    wailsClient.accounts.runAction({
+      accountId: input.accountId,
+      action: input.action,
+    }),
+  runQuotaAction: (input: RunQuotaActionInput): Promise<void> =>
+    wailsClient.accounts.runQuotaAction({
+      action: input.action,
+      accountId: input.accountId || '',
+    }),
+  syncAccountAuth: async (accountId: string, target: SyncTargetID): Promise<AccountSyncResult> =>
+    toAccountSyncResult(await wailsClient.accounts.syncAccountAuth(accountId, target)),
 }

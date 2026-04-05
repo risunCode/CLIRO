@@ -1,5 +1,5 @@
 import { asBoolean, asNumber, asRecord, asString, asStringArray, pick } from '@/backend/compat/coerce'
-import type { CodexAuthSyncResult, KiloAuthSyncResult, OpencodeAuthSyncResult, SyncResultBase } from '@/features/accounts/types'
+import type { AccountSyncResult, CodexAuthSyncResult, KiloAuthSyncResult, OpencodeAuthSyncResult, SyncResultBase } from '@/features/accounts/types'
 
 const toSyncResultBase = (payload: unknown): SyncResultBase => {
   const record = asRecord(payload)
@@ -34,15 +34,7 @@ const toOAuthSyncResult = (
   return result as OpencodeAuthSyncResult
 }
 
-export const toKiloAuthSyncResult = (payload: unknown): KiloAuthSyncResult => {
-  return toOAuthSyncResult(payload, 'kilo-cli') as KiloAuthSyncResult
-}
-
-export const toOpencodeAuthSyncResult = (payload: unknown): OpencodeAuthSyncResult => {
-  return toOAuthSyncResult(payload, 'opencode-cli') as OpencodeAuthSyncResult
-}
-
-export const toCodexAuthSyncResult = (payload: unknown): CodexAuthSyncResult => {
+const toCodexAuthSyncResult = (payload: unknown): CodexAuthSyncResult => {
   const record = asRecord(payload)
 
   return {
@@ -51,5 +43,21 @@ export const toCodexAuthSyncResult = (payload: unknown): CodexAuthSyncResult => 
     backupPath: asString(pick(record, 'backupPath', 'backup_path')) || undefined,
     backupCreated: asBoolean(pick(record, 'backupCreated', 'backup_created')),
     syncedAt: asString(pick(record, 'syncedAt', 'synced_at'))
+  }
+}
+
+export const toAccountSyncResult = (payload: unknown): AccountSyncResult => {
+  const record = asRecord(payload)
+  const target = asString(record.target)
+
+  switch (target) {
+    case 'kilo-cli':
+      return toOAuthSyncResult(payload, 'kilo-cli') as KiloAuthSyncResult
+    case 'opencode-cli':
+      return toOAuthSyncResult(payload, 'opencode-cli') as OpencodeAuthSyncResult
+    case 'codex-cli':
+      return toCodexAuthSyncResult(payload)
+    default:
+      throw new Error(`Unsupported account sync target: ${target || 'unknown'}`)
   }
 }

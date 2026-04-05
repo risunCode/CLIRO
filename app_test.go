@@ -83,8 +83,8 @@ func TestConfirmQuitAuthorizationIsOneShot(t *testing.T) {
 		eventNames = append(eventNames, name)
 	}
 
-	if err := app.ConfirmQuit(); err != nil {
-		t.Fatalf("ConfirmQuit() error = %v", err)
+	if err := app.RunSystemAction(RunSystemActionInput{Action: systemActionConfirmQuit}); err != nil {
+		t.Fatalf("RunSystemAction(confirm-quit) error = %v", err)
 	}
 	if quitCalls != 1 {
 		t.Fatalf("quit calls = %d, want 1", quitCalls)
@@ -160,8 +160,8 @@ func TestToggleAccount_DisableMarksDurableDisabled(t *testing.T) {
 	}
 
 	app := &App{store: store}
-	if err := app.ToggleAccount(accountData.ID, false); err != nil {
-		t.Fatalf("ToggleAccount(false): %v", err)
+	if err := app.RunAccountAction(RunAccountActionInput{AccountID: accountData.ID, Action: accountActionDisable}); err != nil {
+		t.Fatalf("RunAccountAction(disable): %v", err)
 	}
 
 	updated, ok := store.GetAccount(accountData.ID)
@@ -210,8 +210,8 @@ func TestToggleAccount_EnablePreservesQuotaCooldown(t *testing.T) {
 	}
 
 	app := &App{store: store}
-	if err := app.ToggleAccount(accountData.ID, true); err != nil {
-		t.Fatalf("ToggleAccount(true): %v", err)
+	if err := app.RunAccountAction(RunAccountActionInput{AccountID: accountData.ID, Action: accountActionEnable}); err != nil {
+		t.Fatalf("RunAccountAction(enable): %v", err)
 	}
 
 	updated, ok := store.GetAccount(accountData.ID)

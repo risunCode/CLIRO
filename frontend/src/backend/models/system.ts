@@ -11,6 +11,8 @@ export type AppState = WailsAppState & {
 
 export type LogEntry = WailsLogEntry
 
+export type SystemAction = 'confirm-quit' | 'hide-to-tray' | 'restore-window' | 'open-data-dir' | 'clear-logs'
+
 export interface UpdateInfo {
   currentVersion: string
   latestVersion: string

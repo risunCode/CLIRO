@@ -50,6 +50,48 @@ export interface CliSyncResult {
   files: CliSyncFile[]
 }
 
+export interface RunCliSyncInput {
+  target: CliSyncAppID
+  model?: string
+}
+
+export interface CliSyncFileInput {
+  target: CliSyncAppID
+  path: string
+}
+
+export interface SaveCliSyncFileInput {
+  target: CliSyncAppID
+  path: string
+  content: string
+}
+
+export interface UpdateProxySettingsInput {
+  port?: number
+  allowLan?: boolean
+  autoStartProxy?: boolean
+  proxyApiKey?: string
+  regenerateApiKey?: boolean
+  authorizationMode?: boolean
+  schedulingMode?: string
+}
+
+export interface ProxySettingsUpdateResult {
+  restartedProxy: boolean
+  restartedCloudflared: boolean
+  generatedApiKey?: string
+}
+
+export interface UpdateCloudflaredSettingsInput {
+  mode?: 'quick' | 'auth'
+  token?: string
+  useHttp2?: boolean
+}
+
+export type ProxyRuntimeAction = 'start' | 'stop' | 'toggle'
+
+export type CloudflaredAction = 'install' | 'start' | 'stop' | 'refresh-status'
+
 export interface LocalModelCatalogItem {
   id: string
   ownedBy: string

@@ -12,11 +12,10 @@ import { accountsAuthApi } from '@/backend/gateways/auth-gateway'
 import { createAuthSessionController } from '@/features/accounts/utils/auth-session'
 import type {
   Account,
+  AccountSyncResult,
   AuthSession,
-  CodexAuthSyncResult,
-  KiloAuthSyncResult,
   KiroAuthSession,
-  OpencodeAuthSyncResult
+  SyncTargetID
 } from '@/features/accounts/types'
 import { routerApi } from '@/backend/gateways/router-gateway'
 import type { CliSyncAppID, CliSyncResult, ProxyStatus } from '@/features/router/types'
@@ -124,9 +123,7 @@ export interface AccountsActions {
   bulkToggleAccounts: (accountIds: string[], enabled: boolean) => Promise<void>
   bulkDeleteAccounts: (accountIds: string[]) => Promise<void>
   importAccounts: (accounts: Account[]) => Promise<number>
-  syncCodexAccountToKiloAuth: (accountId: string) => Promise<KiloAuthSyncResult>
-  syncCodexAccountToOpencodeAuth: (accountId: string) => Promise<OpencodeAuthSyncResult>
-  syncCodexAccountToCodexCLI: (accountId: string) => Promise<CodexAuthSyncResult>
+  syncAccountAuth: (accountId: string, target: SyncTargetID) => Promise<AccountSyncResult>
   refreshAccountWithQuota: (accountId: string) => Promise<void>
   deleteAccount: (accountId: string) => Promise<void>
 }
@@ -841,7 +838,7 @@ export function createAppController(): AppController {
   const handleToggleAccount = async (accountId: string, enabled: boolean): Promise<void> => {
     await withAccountBusy(accountId, async () => {
       await runAppAction({
-        action: () => accountsApi.toggleAccount(accountId, enabled),
+        action: () => accountsApi.runAccountAction({ accountId, action: enabled ? 'enable' : 'disable' }),
         refresh: refreshAccountsState,
         successToast: {
           title: 'Account Updated',
@@ -858,7 +855,9 @@ export function createAppController(): AppController {
       return
     }
 
-    const result = await runBulkAccountMutation(uniqueIDs, (accountId) => accountsApi.toggleAccount(accountId, enabled))
+    const result = await runBulkAccountMutation(uniqueIDs, (accountId) =>
+      accountsApi.runAccountAction({ accountId, action: enabled ? 'enable' : 'disable' })
+    )
     await refreshAccountsState()
 
     const successCount = result.total - result.failures.length
@@ -873,7 +872,7 @@ export function createAppController(): AppController {
   const handleRefreshAccountWithQuota = async (accountId: string): Promise<void> => {
     await withAccountBusy(accountId, async () => {
       await runAppAction({
-        action: () => accountsApi.refreshAccountWithQuota(accountId),
+        action: () => accountsApi.runAccountAction({ accountId, action: 'refresh-with-quota' }),
         successToast: {
           title: 'Account Refreshed',
           message: 'Quota checked. Token refreshed only when expired.'
@@ -888,7 +887,7 @@ export function createAppController(): AppController {
   const handleDeleteAccount = async (accountId: string): Promise<void> => {
     await withAccountBusy(accountId, async () => {
       await runAppAction({
-        action: () => accountsApi.deleteAccount(accountId),
+        action: () => accountsApi.runAccountAction({ accountId, action: 'delete' }),
         refresh: refreshAccountsState,
         successToast: {
           title: 'Account Deleted',
@@ -905,7 +904,9 @@ export function createAppController(): AppController {
       return
     }
 
-    const result = await runBulkAccountMutation(uniqueIDs, (accountId) => accountsApi.deleteAccount(accountId))
+    const result = await runBulkAccountMutation(uniqueIDs, (accountId) =>
+      accountsApi.runAccountAction({ accountId, action: 'delete' })
+    )
     await refreshAccountsState()
 
     const successCount = result.total - result.failures.length
@@ -931,7 +932,7 @@ export function createAppController(): AppController {
   const handleRefreshAllQuotas = async (): Promise<void> => {
     await withBusyFlag(setRefreshingAllQuotas, async () => {
       await runAppAction({
-        action: () => accountsApi.refreshAllQuotas(),
+        action: () => accountsApi.runQuotaAction({ action: 'refresh-all' }),
         successToast: {
           title: 'Quotas Refreshed',
           message: 'Eligible account quota snapshots were refreshed. Exhausted accounts still waiting for reset were skipped.'
@@ -946,7 +947,7 @@ export function createAppController(): AppController {
   const handleForceRefreshAllQuotas = async (): Promise<void> => {
     await withBusyFlag(setRefreshingAllQuotas, async () => {
       await runAppAction({
-        action: () => accountsApi.forceRefreshAllQuotas(),
+        action: () => accountsApi.runQuotaAction({ action: 'force-refresh-all' }),
         successToast: {
           title: 'Quotas Force Refreshed',
           message: 'Every configured account quota snapshot was refreshed, including accounts normally skipped by smart refresh.'
@@ -958,47 +959,33 @@ export function createAppController(): AppController {
     })
   }
 
-  const handleSyncCodexAccountToKiloAuth = async (accountId: string): Promise<KiloAuthSyncResult> => {
+  const syncSuccessTitleByTarget: Record<SyncTargetID, string> = {
+    'kilo-cli': 'Kilo CLI Synced',
+    'opencode-cli': 'Opencode Synced',
+    'codex-cli': 'Codex CLI Synced'
+  }
+
+  const syncErrorTitleByTarget: Record<SyncTargetID, string> = {
+    'kilo-cli': 'Kilo CLI Sync Failed',
+    'opencode-cli': 'Opencode Sync Failed',
+    'codex-cli': 'Codex CLI Sync Failed'
+  }
+
+  const handleSyncAccountAuth = async (accountId: string, target: SyncTargetID): Promise<AccountSyncResult> => {
     return withAccountBusy(accountId, async () => {
-      return runAppAction<KiloAuthSyncResult>({
-        action: () => accountsApi.syncCodexAccountToKiloAuth(accountId),
+      return runAppAction<AccountSyncResult>({
+        action: () => accountsApi.syncAccountAuth(accountId, target),
         onSuccess: (result) => {
-          notifySuccess('Kilo CLI Synced', `Auth file updated at ${result.targetPath}.`)
+          notifySuccess(syncSuccessTitleByTarget[target], `Auth file updated at ${result.targetPath}.`)
         },
-        errorTitle: 'Kilo CLI Sync Failed',
+        errorTitle: syncErrorTitleByTarget[target],
         rethrow: true
       })
     })
   }
 
-  const handleSyncCodexAccountToCodexCLI = async (accountId: string): Promise<CodexAuthSyncResult> => {
-    return withAccountBusy(accountId, async () => {
-      return runAppAction<CodexAuthSyncResult>({
-        action: () => accountsApi.syncCodexAccountToCodexCLI(accountId),
-        onSuccess: (result) => {
-          notifySuccess('Codex CLI Synced', `Auth file updated at ${result.targetPath}.`)
-        },
-        errorTitle: 'Codex CLI Sync Failed',
-        rethrow: true
-      })
-    })
-  }
-
-  const handleSyncCodexAccountToOpencodeAuth = async (accountId: string): Promise<OpencodeAuthSyncResult> => {
-    return withAccountBusy(accountId, async () => {
-      return runAppAction<OpencodeAuthSyncResult>({
-        action: () => accountsApi.syncCodexAccountToOpencodeAuth(accountId),
-        onSuccess: (result) => {
-          notifySuccess('Opencode Synced', `Auth file updated at ${result.targetPath}.`)
-        },
-        errorTitle: 'Opencode Sync Failed',
-        rethrow: true
-      })
-    })
-  }
-
-  const authController = createAuthSessionController({
-    getSession: (sessionId) => accountsAuthApi.getCodexAuthSession(sessionId),
+	const authController = createAuthSessionController({
+		getSession: (sessionId) => accountsAuthApi.getAuthSession('codex', sessionId),
     onSession: (session) => {
       patchShell({ authSession: session })
     },
@@ -1017,8 +1004,8 @@ export function createAppController(): AppController {
     }
   })
 
-  const kiroAuthController = createAuthSessionController({
-    getSession: (sessionId) => accountsAuthApi.getKiroAuthSession(sessionId),
+	const kiroAuthController = createAuthSessionController({
+		getSession: (sessionId) => accountsAuthApi.getAuthSession('kiro', sessionId) as Promise<KiroAuthSession>,
     onSession: (session) => {
       patchShell({ kiroAuthSession: session })
     },
@@ -1047,10 +1034,10 @@ export function createAppController(): AppController {
     }
 
     await withBusyFlag(setAuthWorking, async () => {
-      const started = await runAppAction({
-        action: () => accountsAuthApi.startCodexAuth(),
-        errorTitle: 'Authentication Start Failed'
-      })
+		const started = await runAppAction({
+			action: () => accountsAuthApi.startAuth('codex'),
+			errorTitle: 'Authentication Start Failed'
+		})
 
       if (!started) {
         return
@@ -1083,11 +1070,11 @@ export function createAppController(): AppController {
     }
 
     await withBusyFlag(setAuthWorking, async () => {
-      const started = await runAppAction<Awaited<ReturnType<typeof accountsAuthApi.startKiroAuth>>>({
-        action: () => (method === 'device' ? accountsAuthApi.startKiroAuth() : accountsAuthApi.startKiroSocialAuth(method)),
-        errorTitle: 'Kiro Authentication Start Failed',
-        rethrow: true
-      })
+		const started = await runAppAction<Awaited<ReturnType<typeof accountsAuthApi.startAuth>>>({
+			action: () => (method === 'device' ? accountsAuthApi.startAuth('kiro') : accountsAuthApi.startSocialAuth('kiro', method)),
+			errorTitle: 'Kiro Authentication Start Failed',
+			rethrow: true
+		})
 
       patchShell({
         kiroAuthSession: {
@@ -1117,9 +1104,9 @@ export function createAppController(): AppController {
       return
     }
 
-    await withBusyFlag(setAuthWorking, async () => {
-      await runAppAction({
-        action: () => accountsAuthApi.cancelCodexAuth(currentSession.sessionId),
+	await withBusyFlag(setAuthWorking, async () => {
+		await runAppAction({
+			action: () => accountsAuthApi.cancelAuth('codex', currentSession.sessionId),
         onSuccess: () => {
           authController.stop()
           patchShell({ authSession: null })
@@ -1136,9 +1123,9 @@ export function createAppController(): AppController {
       return
     }
 
-    await withBusyFlag(setAuthWorking, async () => {
-      await runAppAction({
-        action: () => accountsAuthApi.cancelKiroAuth(currentSession.sessionId),
+	await withBusyFlag(setAuthWorking, async () => {
+		await runAppAction({
+			action: () => accountsAuthApi.cancelAuth('kiro', currentSession.sessionId),
         onSuccess: () => {
           kiroAuthController.stop()
           patchShell({ kiroAuthSession: null })
@@ -1181,7 +1168,9 @@ export function createAppController(): AppController {
   const handleSetAllowLAN = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Proxy Network Mode Updated',
-      () => routerApi.setAllowLAN(enabled),
+      async () => {
+        await routerApi.updateProxySettings({ allowLan: enabled })
+      },
       enabled ? 'Proxy now accepts LAN traffic.' : 'Proxy now listens only on localhost.'
     )
   }
@@ -1189,21 +1178,25 @@ export function createAppController(): AppController {
   const handleSetAutoStartProxy = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Proxy Startup Updated',
-      () => routerApi.setAutoStartProxy(enabled),
+      async () => {
+        await routerApi.updateProxySettings({ autoStartProxy: enabled })
+      },
       enabled ? 'Proxy will start automatically on app launch.' : 'Proxy autostart disabled.'
     )
   }
 
   const handleSetProxyAPIKey = async (apiKey: string): Promise<void> => {
-    await runProxyAction('Proxy API Key Updated', () => routerApi.setProxyAPIKey(apiKey), 'Proxy API key has been updated.')
+    await runProxyAction('Proxy API Key Updated', async () => {
+      await routerApi.updateProxySettings({ proxyApiKey: apiKey })
+    }, 'Proxy API key has been updated.')
   }
 
   const handleRegenerateProxyAPIKey = async (): Promise<string> => {
     return withBusyFlag(
       (busy) => patchShell({ proxyBusy: busy }),
       async () => {
-        return runAppAction<string>({
-          action: () => routerApi.regenerateProxyAPIKey(),
+        const result = await runAppAction<{ generatedApiKey?: string }>({
+          action: () => routerApi.updateProxySettings({ regenerateApiKey: true }),
           refresh: async () => {
             await Promise.all([refreshState(), refreshProxyStatus()])
           },
@@ -1214,6 +1207,12 @@ export function createAppController(): AppController {
           errorTitle: 'Regenerate API Key Failed',
           rethrow: true
         })
+
+        const regenerated = result.generatedApiKey || ''
+        if (!regenerated) {
+          throw new Error('Regenerated API key was not returned by backend.')
+        }
+        return regenerated
       }
     )
   }
@@ -1221,7 +1220,9 @@ export function createAppController(): AppController {
   const handleSetAuthorizationMode = async (enabled: boolean): Promise<void> => {
     await runProxyAction(
       'Authorization Mode Updated',
-      () => routerApi.setAuthorizationMode(enabled),
+      async () => {
+        await routerApi.updateProxySettings({ authorizationMode: enabled })
+      },
       enabled ? 'All proxy routes now require the configured API key.' : 'Proxy routes are open again unless a client sends its own API key header.'
     )
   }
@@ -1232,7 +1233,9 @@ export function createAppController(): AppController {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
 
-    await runProxyAction('Scheduling Mode Updated', () => routerApi.setSchedulingMode(mode), `${label} routing mode is now active.`)
+    await runProxyAction('Scheduling Mode Updated', async () => {
+      await routerApi.updateProxySettings({ schedulingMode: mode })
+    }, `${label} routing mode is now active.`)
   }
 
   const handleSetModelAliases = async (aliases: Record<string, string>): Promise<void> => {
@@ -1244,7 +1247,7 @@ export function createAppController(): AppController {
       (busy) => patchShell({ proxyBusy: busy }),
       async () => {
         await runAppAction({
-          action: () => routerApi.setCloudflaredConfig(mode, token, useHttp2),
+          action: () => routerApi.updateCloudflaredSettings({ mode: mode as 'quick' | 'auth', token, useHttp2 }),
           refresh: refreshCloudflaredStatus,
           onError: async (error) => {
             notifyError('Cloudflared Config Failed', error)
@@ -1256,20 +1259,26 @@ export function createAppController(): AppController {
   }
 
   const handleInstallCloudflared = async (): Promise<void> => {
-    await runProxyAction('Cloudflared Installed', () => routerApi.installCloudflared(), 'Cloudflared binary downloaded and verified.')
+    await runProxyAction('Cloudflared Installed', async () => {
+      await routerApi.runCloudflaredAction('install')
+    }, 'Cloudflared binary downloaded and verified.')
   }
 
   const handleStartCloudflared = async (): Promise<void> => {
-    await runProxyAction('Cloudflared Started', () => routerApi.startCloudflared(), 'Public tunnel started for the local proxy.')
+    await runProxyAction('Cloudflared Started', async () => {
+      await routerApi.runCloudflaredAction('start')
+    }, 'Public tunnel started for the local proxy.')
   }
 
   const handleStopCloudflared = async (): Promise<void> => {
-    await runProxyAction('Cloudflared Stopped', () => routerApi.stopCloudflared(), 'Public tunnel stopped.')
+    await runProxyAction('Cloudflared Stopped', async () => {
+      await routerApi.runCloudflaredAction('stop')
+    }, 'Public tunnel stopped.')
   }
 
   const handleSyncCLIConfig = async (appId: CliSyncAppID, model: string): Promise<CliSyncResult> => {
     return runAppAction<CliSyncResult>({
-      action: () => routerApi.syncCLIConfig(appId, model),
+      action: () => routerApi.runCliSync({ target: appId, model }),
       onSuccess: (result) => {
         const targetPath = result.files[0]?.path || result.currentBaseUrl || 'the target config'
         notifySuccess(`${result.label} Synced`, `Configuration updated at ${targetPath}.`)
@@ -1305,23 +1314,33 @@ export function createAppController(): AppController {
     if (backupState) {
       restoreSteps.push({
         label: 'Scheduling mode',
-        run: () => routerApi.setSchedulingMode(String(backupState.schedulingMode || 'balance'))
+        run: async () => {
+          await routerApi.updateProxySettings({ schedulingMode: String(backupState.schedulingMode || 'balance') })
+        }
       })
       restoreSteps.push({
         label: 'Authorization mode',
-        run: () => routerApi.setAuthorizationMode(backupState.authorizationMode ?? false)
+        run: async () => {
+          await routerApi.updateProxySettings({ authorizationMode: backupState.authorizationMode ?? false })
+        }
       })
       restoreSteps.push({
         label: 'LAN visibility',
-        run: () => routerApi.setAllowLAN(backupState.allowLan ?? false)
+        run: async () => {
+          await routerApi.updateProxySettings({ allowLan: backupState.allowLan ?? false })
+        }
       })
       restoreSteps.push({
         label: 'Proxy auto-start',
-        run: () => routerApi.setAutoStartProxy(backupState.autoStartProxy ?? true)
+        run: async () => {
+          await routerApi.updateProxySettings({ autoStartProxy: backupState.autoStartProxy ?? true })
+        }
       })
       restoreSteps.push({
         label: 'Proxy port',
-        run: () => routerApi.setProxyPort(parseBackupNumber(backupState.proxyPort, 8095))
+        run: async () => {
+          await routerApi.updateProxySettings({ port: parseBackupNumber(backupState.proxyPort, 8095) })
+        }
       })
     }
 
@@ -1483,17 +1502,17 @@ export function createAppController(): AppController {
     bulkToggleAccounts: handleBulkToggleAccounts,
     bulkDeleteAccounts: handleBulkDeleteAccounts,
     importAccounts: handleImportAccounts,
-    syncCodexAccountToKiloAuth: handleSyncCodexAccountToKiloAuth,
-    syncCodexAccountToOpencodeAuth: handleSyncCodexAccountToOpencodeAuth,
-    syncCodexAccountToCodexCLI: handleSyncCodexAccountToCodexCLI,
+    syncAccountAuth: handleSyncAccountAuth,
     refreshAccountWithQuota: handleRefreshAccountWithQuota,
     deleteAccount: handleDeleteAccount
   }
 
   const routerActions: RouterActions = {
-    startProxy: () => runProxyAction('Proxy Started', routerApi.startProxy, 'Proxy service started.'),
-    stopProxy: () => runProxyAction('Proxy Stopped', routerApi.stopProxy, 'Proxy service stopped.'),
-    setProxyPort: (port) => runProxyAction('Proxy Port Updated', () => routerApi.setProxyPort(port), `Proxy port set to ${port}.`),
+    startProxy: () => runProxyAction('Proxy Started', () => routerApi.runProxyAction('start'), 'Proxy service started.'),
+    stopProxy: () => runProxyAction('Proxy Stopped', () => routerApi.runProxyAction('stop'), 'Proxy service stopped.'),
+    setProxyPort: (port) => runProxyAction('Proxy Port Updated', async () => {
+      await routerApi.updateProxySettings({ port })
+    }, `Proxy port set to ${port}.`),
     setAllowLAN: handleSetAllowLAN,
     setAutoStartProxy: handleSetAutoStartProxy,
     setProxyAPIKey: handleSetProxyAPIKey,
@@ -1509,8 +1528,8 @@ export function createAppController(): AppController {
     startCloudflared: handleStartCloudflared,
     stopCloudflared: handleStopCloudflared,
     getCliSyncStatuses: routerApi.getCliSyncStatuses,
-    getCliSyncFileContent: routerApi.getCliSyncFileContent,
-    saveCliSyncFileContent: routerApi.saveCliSyncFileContent,
+    getCliSyncFileContent: (appId, path) => routerApi.getCliSyncFile({ target: appId, path }),
+    saveCliSyncFileContent: (appId, path, content) => routerApi.saveCliSyncFile({ target: appId, path, content }),
     syncCLIConfig: handleSyncCLIConfig
   }
 

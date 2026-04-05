@@ -23,6 +23,16 @@ export interface KiroAuthSession {
 
 export type SyncTargetID = 'kilo-cli' | 'opencode-cli' | 'codex-cli'
 
+export type AccountAction =
+  | 'refresh'
+  | 'refresh-with-quota'
+  | 'enable'
+  | 'disable'
+  | 'delete'
+  | 'clear-cooldown'
+
+export type QuotaAction = 'refresh-one' | 'refresh-all' | 'force-refresh-all'
+
 export interface SyncResultBase {
   targetPath: string
   fileExisted: boolean

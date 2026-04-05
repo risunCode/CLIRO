@@ -1,15 +1,10 @@
-import { wailsGateway } from '@/backend/gateways/wails-gateway'
-import type { WailsCodexAuthStart, WailsKiroAuthStart } from '@/backend/models/wails'
-import type { AuthSession, KiroAuthSession } from '@/features/accounts/types'
+import { wailsClient } from '@/backend/client/wails-client'
+import type { WailsAuthSessionView, WailsAuthStart } from '@/backend/models/wails'
 
 export const accountsAuthApi = {
-  startCodexAuth: (): Promise<WailsCodexAuthStart> => wailsGateway.auth.startCodexAuth(),
-  getCodexAuthSession: (sessionId: string): Promise<AuthSession> => wailsGateway.auth.getCodexAuthSession(sessionId),
-  cancelCodexAuth: (sessionId: string): Promise<void> => wailsGateway.auth.cancelCodexAuth(sessionId),
-  submitCodexAuthCode: (sessionId: string, code: string): Promise<void> => wailsGateway.auth.submitCodexAuthCode(sessionId, code),
-  startKiroAuth: (): Promise<WailsKiroAuthStart> => wailsGateway.auth.startKiroAuth(),
-  startKiroSocialAuth: (provider: string): Promise<WailsKiroAuthStart> => wailsGateway.auth.startKiroSocialAuth(provider),
-  getKiroAuthSession: (sessionId: string): Promise<KiroAuthSession> => wailsGateway.auth.getKiroAuthSession(sessionId) as Promise<KiroAuthSession>,
-  cancelKiroAuth: (sessionId: string): Promise<void> => wailsGateway.auth.cancelKiroAuth(sessionId),
-  submitKiroAuthCode: (sessionId: string, code: string): Promise<void> => wailsGateway.auth.submitKiroAuthCode(sessionId, code)
+	startAuth: (provider: string): Promise<WailsAuthStart> => wailsClient.auth.startAuth(provider),
+	startSocialAuth: (provider: string, socialProvider: string): Promise<WailsAuthStart> => wailsClient.auth.startSocialAuth(provider, socialProvider),
+	getAuthSession: (provider: string, sessionId: string): Promise<WailsAuthSessionView> => wailsClient.auth.getAuthSession(provider, sessionId),
+	cancelAuth: (provider: string, sessionId: string): Promise<void> => wailsClient.auth.cancelAuth(provider, sessionId),
+	submitAuthCode: (provider: string, sessionId: string, code: string): Promise<void> => wailsClient.auth.submitAuthCode(provider, sessionId, code)
 }

@@ -31,9 +31,7 @@
   onBulkToggleAccounts={actions.bulkToggleAccounts}
   onBulkDeleteAccounts={actions.bulkDeleteAccounts}
   onImportAccounts={actions.importAccounts}
-  onSyncCodexAccountToKiloAuth={actions.syncCodexAccountToKiloAuth}
-  onSyncCodexAccountToOpencodeAuth={actions.syncCodexAccountToOpencodeAuth}
-  onSyncCodexAccountToCodexCLI={actions.syncCodexAccountToCodexCLI}
+  onSyncAccountAuth={actions.syncAccountAuth}
   onRefreshAccountWithQuota={actions.refreshAccountWithQuota}
   onDeleteAccount={actions.deleteAccount}
 />

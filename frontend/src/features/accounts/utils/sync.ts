@@ -1,4 +1,4 @@
-import type { AccountSyncResult, CodexAuthSyncResult, KiloAuthSyncResult, OpencodeAuthSyncResult, SyncTargetID } from '@/features/accounts/types'
+import type { AccountSyncResult, SyncTargetID } from '@/features/accounts/types'
 
 interface AccountSyncTarget {
   id: SyncTargetID
@@ -8,9 +8,7 @@ interface AccountSyncTarget {
 }
 
 interface AccountSyncHandlers {
-  toKilo: (accountId: string) => Promise<KiloAuthSyncResult>
-  toOpencode: (accountId: string) => Promise<OpencodeAuthSyncResult>
-  toCodex: (accountId: string) => Promise<CodexAuthSyncResult>
+  sync: (accountId: string, target: SyncTargetID) => Promise<AccountSyncResult>
 }
 
 export const ACCOUNT_SYNC_TARGETS: readonly AccountSyncTarget[] = [
@@ -43,13 +41,5 @@ export const runAccountSyncByTarget = async (
   target: SyncTargetID,
   handlers: AccountSyncHandlers
 ): Promise<AccountSyncResult> => {
-  if (target === 'codex-cli') {
-    return handlers.toCodex(accountId)
-  }
-
-  if (target === 'opencode-cli') {
-    return handlers.toOpencode(accountId)
-  }
-
-  return handlers.toKilo(accountId)
+  return handlers.sync(accountId, target)
 }

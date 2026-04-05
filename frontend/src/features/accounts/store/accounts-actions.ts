@@ -10,9 +10,9 @@ export const createAccountsScreenActions = (actions: {
   appActions: AppActions
   accountsActions: AccountsActions
 }): AccountsScreenActions => {
-  return {
-    ...actions.accountsActions,
-    openExternalURL: actions.appActions.openExternalURL,
-    submitCodexAuthCode: (sessionId: string, code: string) => accountsAuthApi.submitCodexAuthCode(sessionId, code)
-  }
+	return {
+		...actions.accountsActions,
+		openExternalURL: actions.appActions.openExternalURL,
+		submitCodexAuthCode: (sessionId: string, code: string) => accountsAuthApi.submitAuthCode('codex', sessionId, code)
+	}
 }

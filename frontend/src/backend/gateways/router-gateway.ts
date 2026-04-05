@@ -1,8 +1,23 @@
-import { GetCLISyncFileContent, GetCLISyncStatuses, GetLocalModelCatalog, GetModelAliases, GetProxyStatus, InstallCloudflared, RefreshCloudflaredStatus, RegenerateProxyAPIKey, SaveCLISyncFileContent, SetAllowLAN, SetAuthorizationMode, SetAutoStartProxy, SetCloudflaredConfig, SetModelAliases, SetProxyAPIKey, SetProxyPort, SetSchedulingMode, StartCloudflared, StartProxy, StopCloudflared, StopProxy, SyncCLIConfig } from '@/backend/client/wails-client'
+import { wailsClient } from '@/backend/client/wails-client'
 import { toCliSyncResult, toCliSyncStatus, toLocalModelCatalogItem, toProxyStatus } from '@/backend/compat/router-compat'
 import { buildEndpointTarget, getEndpointPreset } from '@/features/router/utils/endpoint-tester'
 import { getErrorMessage } from '@/shared/utils/error'
-import type { CliSyncAppID, CliSyncResult, CliSyncStatus, EndpointTestRequest, EndpointTestResult, LocalModelCatalogItem, ProxyStatus } from '@/features/router/types'
+import type {
+  CliSyncFileInput,
+  CliSyncResult,
+  CliSyncStatus,
+  CloudflaredAction,
+  EndpointTestRequest,
+  EndpointTestResult,
+  LocalModelCatalogItem,
+  ProxyRuntimeAction,
+  ProxySettingsUpdateResult,
+  ProxyStatus,
+  RunCliSyncInput,
+  SaveCliSyncFileInput,
+  UpdateCloudflaredSettingsInput,
+  UpdateProxySettingsInput,
+} from '@/features/router/types'
 
 const fetchProxyModelCatalog = async (baseUrl: string, apiKey: string): Promise<LocalModelCatalogItem[]> => {
   const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '')
@@ -36,7 +51,7 @@ const fetchProxyModelCatalog = async (baseUrl: string, apiKey: string): Promise<
 
 const getEffectiveModelCatalog = async (baseUrl: string, apiKey: string): Promise<LocalModelCatalogItem[]> => {
   try {
-    const localModels = (await GetLocalModelCatalog()).map(toLocalModelCatalogItem)
+    const localModels = (await wailsClient.router.getLocalModelCatalog()).map(toLocalModelCatalogItem)
     if (localModels.length > 0) {
       return localModels
     }
@@ -70,12 +85,11 @@ const executeEndpointTest = async ({ baseUrl, apiKey, endpointId, body = '' }: E
   try {
     const response = await fetch(target, options)
     const contentType = response.headers.get('content-type') || ''
-    
-    // Handle SSE streaming
-  if (contentType.includes('text/event-stream')) {
+
+    if (contentType.includes('text/event-stream')) {
       const reader = response.body?.getReader()
       if (!reader) {
-     throw new Error('Response body is not readable')
+        throw new Error('Response body is not readable')
       }
 
       const decoder = new TextDecoder()
@@ -84,23 +98,22 @@ const executeEndpointTest = async ({ baseUrl, apiKey, endpointId, body = '' }: E
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-    responseText += decoder.decode(value, { stream: true })
+        responseText += decoder.decode(value, { stream: true })
       }
 
       return {
         status: `${response.status} ${response.statusText}`,
-        responseText
-}
+        responseText,
+      }
     }
 
- // Handle JSON response
     const responseText = contentType.includes('application/json')
       ? JSON.stringify(await response.json(), null, 2)
       : await response.text()
 
     return {
       status: `${response.status} ${response.statusText}`,
-      responseText
+      responseText,
     }
   } catch (error) {
     throw new Error(getErrorMessage(error, 'Request failed'))
@@ -108,30 +121,39 @@ const executeEndpointTest = async ({ baseUrl, apiKey, endpointId, body = '' }: E
 }
 
 export const routerApi = {
-  getProxyStatus: async (): Promise<ProxyStatus> => toProxyStatus(await GetProxyStatus()),
-  refreshCloudflaredStatus: async (): Promise<ProxyStatus> => toProxyStatus(await RefreshCloudflaredStatus()),
+  getProxyStatus: async (): Promise<ProxyStatus> => toProxyStatus(await wailsClient.router.getProxyStatus()),
+  refreshCloudflaredStatus: async (): Promise<ProxyStatus> => toProxyStatus(await wailsClient.router.runCloudflaredAction('refresh-status')),
   getEffectiveModelCatalog,
   getCliSyncStatuses: async (): Promise<CliSyncStatus[]> =>
-    (await GetCLISyncStatuses())
+    (await wailsClient.router.getCliSyncStatuses())
       .map(toCliSyncStatus)
       .filter((status): status is CliSyncStatus => status !== null),
-  getCliSyncFileContent: (appId: CliSyncAppID, path: string): Promise<string> => GetCLISyncFileContent(appId, path),
-  saveCliSyncFileContent: (appId: CliSyncAppID, path: string, content: string): Promise<void> => SaveCLISyncFileContent(appId, path, content),
-  syncCLIConfig: async (appId: CliSyncAppID, model: string): Promise<CliSyncResult> => toCliSyncResult(await SyncCLIConfig(appId, model)),
-  startProxy: (): Promise<void> => StartProxy(),
-  stopProxy: (): Promise<void> => StopProxy(),
-  setProxyPort: (port: number): Promise<void> => SetProxyPort(port),
-  setAllowLAN: (enabled: boolean): Promise<void> => SetAllowLAN(enabled),
-  setAutoStartProxy: (enabled: boolean): Promise<void> => SetAutoStartProxy(enabled),
-  setProxyAPIKey: (apiKey: string): Promise<void> => SetProxyAPIKey(apiKey),
-  regenerateProxyAPIKey: (): Promise<string> => RegenerateProxyAPIKey(),
-  setAuthorizationMode: (enabled: boolean): Promise<void> => SetAuthorizationMode(enabled),
-  setSchedulingMode: (mode: string): Promise<void> => SetSchedulingMode(mode),
-  setCloudflaredConfig: (mode: string, token: string, useHttp2: boolean): Promise<void> => SetCloudflaredConfig(mode, token, useHttp2),
-  installCloudflared: (): Promise<void> => InstallCloudflared(),
-  startCloudflared: (): Promise<void> => StartCloudflared(),
-  stopCloudflared: (): Promise<void> => StopCloudflared(),
+  getCliSyncFile: (input: CliSyncFileInput): Promise<string> =>
+    wailsClient.router.getCliSyncFile({ target: input.target, path: input.path }),
+  saveCliSyncFile: (input: SaveCliSyncFileInput): Promise<void> =>
+    wailsClient.router.saveCliSyncFile({ target: input.target, path: input.path, content: input.content }),
+  runCliSync: async (input: RunCliSyncInput): Promise<CliSyncResult> =>
+    toCliSyncResult(await wailsClient.router.runCliSync({ target: input.target, model: input.model || '' })),
+  updateProxySettings: async (input: UpdateProxySettingsInput): Promise<ProxySettingsUpdateResult> =>
+    wailsClient.router.updateProxySettings({
+      port: input.port,
+      allowLan: input.allowLan,
+      autoStartProxy: input.autoStartProxy,
+      proxyApiKey: input.proxyApiKey,
+      regenerateApiKey: input.regenerateApiKey ?? false,
+      authorizationMode: input.authorizationMode,
+      schedulingMode: input.schedulingMode,
+    }),
+  updateCloudflaredSettings: (input: UpdateCloudflaredSettingsInput): Promise<void> =>
+    wailsClient.router.updateCloudflaredSettings({
+      mode: input.mode,
+      token: input.token,
+      useHttp2: input.useHttp2,
+    }),
+  runProxyAction: (action: ProxyRuntimeAction): Promise<void> => wailsClient.router.runProxyAction(action),
+  runCloudflaredAction: async (action: CloudflaredAction): Promise<ProxyStatus> =>
+    toProxyStatus(await wailsClient.router.runCloudflaredAction(action)),
   executeEndpointTest,
-  getModelAliases: (): Promise<Record<string, string>> => GetModelAliases(),
-  setModelAliases: (aliases: Record<string, string>): Promise<void> => SetModelAliases(aliases)
+  getModelAliases: (): Promise<Record<string, string>> => wailsClient.router.getModelAliases(),
+  setModelAliases: (aliases: Record<string, string>): Promise<void> => wailsClient.router.setModelAliases(aliases),
 }
