@@ -3,7 +3,7 @@
   import type { ProxyStatus } from '@/features/router/types'
   import { openBrowserURL } from '@/backend/client/browser'
 
-  const repoURL = 'https://github.com/risunCode/Cliro-Go'
+  const repoURL = 'https://github.com/risunCode/CLIRO'
   export let proxyStatus: ProxyStatus | null = null
   export let state: AppState | null = null
   export let loading = false
@@ -56,7 +56,7 @@
       class="inline-flex w-fit items-center gap-1 rounded-sm border border-transparent px-2 py-1 text-text-secondary transition hover:border-border hover:bg-app hover:text-text-primary"
       on:click={(event) => openURL(event, repoURL)}
     >
-      CLIrouter Github
+      CLIRO GitHub
     </a>
   </div>
 </footer>

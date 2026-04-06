@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"cliro-go/internal/auth"
-	"cliro-go/internal/config"
-	"cliro-go/internal/logger"
+	"cliro/internal/auth"
+	"cliro/internal/config"
+	"cliro/internal/logger"
 )
 
 const (

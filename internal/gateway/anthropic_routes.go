@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"strings"
 
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/contract/rules"
-	"cliro-go/internal/logger"
-	"cliro-go/internal/protocol/anthropic"
-	"cliro-go/internal/provider"
-	kiroprovider "cliro-go/internal/provider/kiro"
-	"cliro-go/internal/route"
-	"cliro-go/internal/util"
+	contract "cliro/internal/contract"
+	"cliro/internal/contract/rules"
+	"cliro/internal/logger"
+	"cliro/internal/protocol/anthropic"
+	"cliro/internal/provider"
+	kiroprovider "cliro/internal/provider/kiro"
+	"cliro/internal/route"
+	"cliro/internal/util"
 )
 
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
@@ -112,67 +112,14 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 	thinkingPresent := strings.TrimSpace(response.Thinking) != ""
 	textPresent := strings.TrimSpace(response.Text) != ""
 	thinkingSignature := anthropicThinkingSignature(response.Thinking, response.ThinkingSignature)
-	contentBlocks := make([]map[string]any, 0, 2+len(response.ToolCalls))
-	if thinkingPresent {
-		contentBlocks = append(contentBlocks, map[string]any{
-			"type":      "thinking",
-			"thinking":  "",
-			"signature": "",
-		})
-	}
-	if textPresent {
-		contentBlocks = append(contentBlocks, map[string]any{
-			"type": "text",
-			"text": "",
-		})
-	}
-	for _, toolCall := range response.ToolCalls {
-		name := strings.TrimSpace(toolCall.Name)
-		if name == "" {
-			continue
-		}
-		id := strings.TrimSpace(toolCall.ID)
-		if id == "" {
-			id = "toolu_" + newSSEID()
-		}
-		contentBlocks = append(contentBlocks, map[string]any{
-			"type":  "tool_use",
-			"id":    id,
-			"name":  name,
-			"input": map[string]any{},
-		})
-	}
-	if len(contentBlocks) == 0 {
-		contentBlocks = append(contentBlocks, map[string]any{
-			"type": "text",
-			"text": "",
-		})
-		textPresent = true
-	}
-
-	writeAnthropicSSEEvent(w, "message_start", map[string]any{
-		"type": "message_start",
-		"message": map[string]any{
-			"id":            messageID,
-			"type":          "message",
-			"role":          "assistant",
-			"model":         model,
-			"content":       contentBlocks,
-			"stop_reason":   nil,
-			"stop_sequence": nil,
-			"usage": map[string]int{
-				"input_tokens":  anthropicStreamInputTokens(response.Usage),
-				"output_tokens": 0,
-			},
-		},
-	})
-	flusher.Flush()
 
 	emitStreamEvent := func(eventName string, payload map[string]any) {
 		writeAnthropicSSEEvent(w, eventName, payload)
 		flusher.Flush()
 	}
 
+	streamState := anthropic.NewMessageStreamState(messageID, model, emitStreamEvent)
+	streamState.StartMessage(anthropicStreamInputTokens(response.Usage))
 	nextIndex := 0
 	thinkingLifecycle := anthropic.NewThinkingBlockLifecycle(nextIndex, emitStreamEvent)
 	if thinkingPresent {
@@ -180,53 +127,24 @@ func (s *Server) streamAnthropicMessages(w http.ResponseWriter, requestedModel s
 			thinkingLifecycle.EmitThinkingDelta(chunk)
 		}
 		nextIndex = thinkingLifecycle.PrepareForNextBlock(thinkingSignature)
+		streamState.MarkIndex(nextIndex)
 	}
 
 	if textPresent {
-		textIndex := nextIndex
-		nextIndex++
-
-		writeAnthropicSSEEvent(w, "content_block_start", map[string]any{
-			"type":  "content_block_start",
-			"index": textIndex,
-			"content_block": map[string]any{
-				"type": "text",
-				"text": "",
-			},
-		})
-		flusher.Flush()
-
 		for _, chunk := range chunkText(response.Text, 160) {
-			event := anthropic.IRStreamToEvent(contract.Event{TextDelta: chunk})
-			event["index"] = textIndex
-			writeAnthropicSSEEvent(w, event["type"].(string), event)
-			flusher.Flush()
+			streamState.EmitTextDelta(chunk)
 		}
-
-		writeAnthropicSSEEvent(w, "content_block_stop", map[string]any{"type": "content_block_stop", "index": textIndex})
-		flusher.Flush()
+		streamState.CloseTextBlock()
 	}
 
+	nextIndex = streamState.NextIndex()
 	for _, toolCall := range response.ToolCalls {
 		nextIndex = emitAnthropicStreamToolCall(w, flusher, nextIndex, toolCall)
 	}
+	streamState.MarkIndex(nextIndex)
 
 	stopReason := anthropicStreamStopReason(response.StopReason, len(response.ToolCalls) > 0)
-
-	writeAnthropicSSEEvent(w, "message_delta", map[string]any{
-		"type": "message_delta",
-		"delta": map[string]any{
-			"stop_reason":   stopReason,
-			"stop_sequence": nil,
-		},
-		"usage": map[string]int{
-			"output_tokens": anthropicStreamOutputTokens(response.Usage),
-		},
-	})
-	flusher.Flush()
-
-	writeAnthropicSSEEvent(w, "message_stop", map[string]any{"type": "message_stop"})
-	flusher.Flush()
+	streamState.Complete(stopReason, anthropicStreamOutputTokens(response.Usage))
 }
 
 func anthropicThinkingSignature(thinking string, providedSignature string) string {
@@ -280,144 +198,111 @@ func (s *Server) processAnthropicMessagesLiveStream(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Setup SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		s.writeAnthropicError(w, http.StatusInternalServerError, "api_error", "streaming not supported")
 		return
 	}
 
-	// Prepare message metadata
 	messageID := "msg_" + newSSEID()
 	model := util.FirstNonEmpty(strings.TrimSpace(req.Model), strings.TrimSpace(preparedRequest.Model))
-
-	// State tracking for live streaming
-	var textStarted bool
-	var textIndex int
 	var promptTokens, completionTokens int
 	var streamedThinking strings.Builder
-
-	// Send message_start
-	writeAnthropicSSEEvent(w, "message_start", map[string]any{
-		"type": "message_start",
-		"message": map[string]any{
-			"id":            messageID,
-			"type":          "message",
-			"role":          "assistant",
-			"model":         model,
-			"content":       []any{},
-			"stop_reason":   nil,
-			"stop_sequence": nil,
-			"usage": map[string]int{
-				"input_tokens":  0,
-				"output_tokens": 0,
-			},
-		},
-	})
-	flusher.Flush()
+	textStreamed := false
+	thinkingStreamed := false
+	headersApplied := false
 	emitStreamEvent := func(eventName string, payload map[string]any) {
+		if !headersApplied {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			headersApplied = true
+		}
 		writeAnthropicSSEEvent(w, eventName, payload)
 		flusher.Flush()
 	}
+	streamState := anthropic.NewMessageStreamState(messageID, model, emitStreamEvent)
 	thinkingLifecycle := anthropic.NewThinkingBlockLifecycle(0, emitStreamEvent)
 
-	// Execute with streaming callback
 	chatReq := provider.RequestFromIR(preparedRequest)
 
 	outcome, status, message, execErr := kiroExecutor.CompleteWithCallback(r.Context(), chatReq, func(event kiroprovider.StreamEvent) {
-		// Handle thinking delta
-		if event.Thinking != "" {
-			if !textStarted {
-				streamedThinking.WriteString(event.Thinking)
-				thinkingLifecycle.EmitThinkingDelta(event.Thinking)
-			}
-		}
-
-		// Handle text delta
-		if event.Text != "" {
-			if !textStarted {
-				textIndex = thinkingLifecycle.PrepareForNextBlock(anthropicThinkingSignature(streamedThinking.String(), ""))
-				textStarted = true
-
-				writeAnthropicSSEEvent(w, "content_block_start", map[string]any{
-					"type":  "content_block_start",
-					"index": textIndex,
-					"content_block": map[string]any{
-						"type": "text",
-						"text": "",
-					},
-				})
-				flusher.Flush()
-			}
-
-			writeAnthropicSSEEvent(w, "content_block_delta", map[string]any{
-				"type":  "content_block_delta",
-				"index": textIndex,
-				"delta": map[string]any{
-					"type": "text_delta",
-					"text": event.Text,
-				},
-			})
-			flusher.Flush()
-		}
-
-		// Track usage
 		if event.Usage.PromptTokens > 0 {
 			promptTokens = event.Usage.PromptTokens
 		}
 		if event.Usage.CompletionTokens > 0 {
 			completionTokens = event.Usage.CompletionTokens
 		}
+
+		if event.Thinking != "" {
+			if !streamState.Started() {
+				streamState.StartMessage(promptTokens)
+			}
+			thinkingStreamed = true
+			streamedThinking.WriteString(event.Thinking)
+			thinkingLifecycle.EmitThinkingDelta(event.Thinking)
+		}
+
+		if event.Text != "" {
+			if !streamState.Started() {
+				streamState.StartMessage(promptTokens)
+			}
+			textStreamed = true
+			nextIndex := thinkingLifecycle.PrepareForNextBlock(anthropicThinkingSignature(streamedThinking.String(), ""))
+			streamState.MarkIndex(nextIndex)
+			streamState.EmitTextDelta(event.Text)
+		}
 	})
 
 	if execErr != nil {
 		s.logRequestEvent("warn", requestID, "failed", fmt.Sprintf("route=%q", "anthropic_messages"), fmt.Sprintf("status=%d", status), fmt.Sprintf("reason=%q", message))
-		// Can't send error after SSE started, just close stream
+		if !streamState.Started() {
+			errorType := "api_error"
+			if status == http.StatusBadRequest {
+				errorType = "invalid_request_error"
+			} else if status == http.StatusServiceUnavailable {
+				errorType = "provider_unavailable"
+			}
+			s.writeAnthropicError(w, status, errorType, message)
+		}
 		return
 	}
 	irResponse := outcomeToIRResponse(outcome, preparedRequest.Model)
 
-	// Close any open content blocks
-	nextIndex := 0
-	if textStarted {
-		writeAnthropicSSEEvent(w, "content_block_stop", map[string]any{
-			"type":  "content_block_stop",
-			"index": textIndex,
-		})
-		flusher.Flush()
-		nextIndex = textIndex + 1
-	} else {
-		nextIndex = thinkingLifecycle.PrepareForNextBlock(anthropicThinkingSignature(irResponse.Thinking, irResponse.ThinkingSignature))
+	if promptTokens == 0 {
+		promptTokens = anthropicStreamInputTokens(irResponse.Usage)
 	}
+	if completionTokens == 0 {
+		completionTokens = anthropicStreamOutputTokens(irResponse.Usage)
+	}
+	if !streamState.Started() {
+		streamState.StartMessage(promptTokens)
+	}
+	if !thinkingStreamed && strings.TrimSpace(irResponse.Thinking) != "" {
+		for _, chunk := range chunkText(irResponse.Thinking, 160) {
+			streamedThinking.WriteString(chunk)
+			thinkingLifecycle.EmitThinkingDelta(chunk)
+		}
+		thinkingStreamed = true
+	}
+	if !textStreamed && strings.TrimSpace(irResponse.Text) != "" {
+		nextIndex := thinkingLifecycle.PrepareForNextBlock(anthropicThinkingSignature(util.FirstNonEmpty(streamedThinking.String(), irResponse.Thinking), irResponse.ThinkingSignature))
+		streamState.MarkIndex(nextIndex)
+		for _, chunk := range chunkText(irResponse.Text, 160) {
+			streamState.EmitTextDelta(chunk)
+		}
+	}
+	streamState.CloseTextBlock()
+	nextIndex := thinkingLifecycle.PrepareForNextBlock(anthropicThinkingSignature(util.FirstNonEmpty(streamedThinking.String(), irResponse.Thinking), irResponse.ThinkingSignature))
+	streamState.MarkIndex(nextIndex)
 
 	for _, toolCall := range irResponse.ToolCalls {
 		nextIndex = emitAnthropicStreamToolCall(w, flusher, nextIndex, toolCall)
 	}
+	streamState.MarkIndex(nextIndex)
 
-	// Send message_delta with stop reason
 	stopReason := anthropicStreamStopReason(irResponse.StopReason, len(irResponse.ToolCalls) > 0)
-
-	writeAnthropicSSEEvent(w, "message_delta", map[string]any{
-		"type": "message_delta",
-		"delta": map[string]any{
-			"stop_reason":   stopReason,
-			"stop_sequence": nil,
-		},
-		"usage": map[string]int{
-			"output_tokens": completionTokens,
-		},
-	})
-	flusher.Flush()
-
-	// Send message_stop
-	writeAnthropicSSEEvent(w, "message_stop", map[string]any{
-		"type": "message_stop",
-	})
-	flusher.Flush()
+	streamState.Complete(stopReason, completionTokens)
 
 	s.logAnthropicThinkingDecision(requestID, preparedRequest.Thinking.Requested, irResponse, strings.TrimSpace(anthropicThinkingSignature(util.FirstNonEmpty(streamedThinking.String(), outcome.Thinking), outcome.ThinkingSignature)) != "")
 	s.logRequestEvent("info", requestID, "completed", fmt.Sprintf("route=%q", "anthropic_messages"), fmt.Sprintf("status=%q", "live_streaming"), fmt.Sprintf("prompt_tokens=%d", promptTokens), fmt.Sprintf("completion_tokens=%d", completionTokens))

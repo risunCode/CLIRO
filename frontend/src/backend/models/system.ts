@@ -1,15 +1,8 @@
-import type { WailsAppState, WailsLogEntry } from '@/backend/models/wails'
+import type { logger, main } from '../../../wailsjs/go/models'
 
-export type AppState = WailsAppState & {
-  startupWarnings?: Array<{
-    code?: string
-    filePath?: string
-    backupPath?: string
-    message?: string
-  }>
-}
+export type AppState = main.State
 
-export type LogEntry = WailsLogEntry
+export type LogEntry = logger.Entry
 
 export type SystemAction = 'confirm-quit' | 'hide-to-tray' | 'restore-window' | 'open-data-dir' | 'clear-logs'
 

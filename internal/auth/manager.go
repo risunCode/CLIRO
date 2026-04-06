@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	authcodex "cliro-go/internal/auth/codex"
-	authkiro "cliro-go/internal/auth/kiro"
-	"cliro-go/internal/config"
-	"cliro-go/internal/logger"
-	syncauth "cliro-go/internal/sync/authtoken"
+	authcodex "cliro/internal/auth/codex"
+	authkiro "cliro/internal/auth/kiro"
+	"cliro/internal/config"
+	"cliro/internal/logger"
+	syncauth "cliro/internal/sync/authtoken"
 )
 
 type Manager struct {
@@ -23,7 +23,7 @@ type Manager struct {
 	client         *http.Client
 	quotaRefresher quotaRefresher
 
-	providers map[string]AuthProvider
+	providers map[string]authProvider
 }
 
 type quotaRefresher interface {
@@ -39,8 +39,8 @@ type kiroAuthProvider struct {
 }
 
 var (
-	_ AuthProvider = (*codexAuthProvider)(nil)
-	_ AuthProvider = (*kiroAuthProvider)(nil)
+	_ authProvider = (*codexAuthProvider)(nil)
+	_ authProvider = (*kiroAuthProvider)(nil)
 )
 
 func NewManager(store *config.Manager, log *logger.Logger) *Manager {
@@ -52,7 +52,7 @@ func NewManager(store *config.Manager, log *logger.Logger) *Manager {
 	codexSvc := authcodex.NewService(store, log, m.httpClient, m.refreshQuotaOnly)
 	kiroSvc := authkiro.NewService(store, log, m.httpClient, m.refreshQuotaOnly)
 
-	m.providers = map[string]AuthProvider{
+	m.providers = map[string]authProvider{
 		"codex": &codexAuthProvider{service: codexSvc},
 		"kiro":  &kiroAuthProvider{service: kiroSvc},
 	}
@@ -78,16 +78,6 @@ func (m *Manager) SetQuotaRefresher(refresher quotaRefresher) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.quotaRefresher = refresher
-}
-
-func (m *Manager) SetHTTPTimeout(timeout time.Duration) {
-	if timeout <= 0 {
-		return
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.client = &http.Client{Timeout: timeout}
 }
 
 func (m *Manager) SetHTTPClient(client *http.Client) {
@@ -242,10 +232,6 @@ func (m *Manager) SyncAccountAuth(accountID string, target AuthSyncTarget) (Auth
 	}
 }
 
-func AccountFingerprint(account config.Account) string {
-	return authcodex.AccountFingerprint(account)
-}
-
 func (m *Manager) refreshAccount(account config.Account, force bool) (config.Account, error) {
 	authProvider, err := m.providerFor(account.Provider)
 	if err != nil {
@@ -258,7 +244,7 @@ func (m *Manager) refreshAccount(account config.Account, force bool) (config.Acc
 	return authProvider.RefreshAccount(account, force)
 }
 
-func (m *Manager) providerFor(name string) (AuthProvider, error) {
+func (m *Manager) providerFor(name string) (authProvider, error) {
 	provider := strings.ToLower(strings.TrimSpace(name))
 	if provider == "" {
 		return nil, fmt.Errorf("provider is required")

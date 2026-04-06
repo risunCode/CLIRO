@@ -1,6 +1,6 @@
 package provider
 
-import contract "cliro-go/internal/contract"
+import contract "cliro/internal/contract"
 
 func RequestFromIR(request contract.Request) ChatRequest {
 	messages := make([]Message, 0, len(request.Messages))

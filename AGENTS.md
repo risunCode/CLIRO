@@ -1,25 +1,25 @@
-# AGENTS.md - CLIro-Go Agent Guide
+# AGENTS.md - CLIRO Agent Guide
 
-This guide gives AI coding agents the current project scope, architecture, and workflows for CLIro-Go.
+This guide gives AI coding agents the current project scope, architecture, and workflows for CLIRO.
 
 ## Project Overview
 
-**CLIro-Go** is a Wails desktop control plane for a local OpenAI-compatible + Anthropic-compatible proxy.
+**CLIRO** is a Wails desktop control plane for a local OpenAI-compatible + Anthropic-compatible proxy.
 
 - **Backend**: Go 1.23+
 - **Frontend**: Svelte + TypeScript + Vite
 - **Desktop shell**: Wails v2.11+
-- **Current release**: **v0.3.0**
+- **Current release**: **v0.3.1**
 - **Main entry point**: `main.go`
 - **Wails app bridge**: `app.go`
 
-CLIro-Go currently focuses on:
+CLIRO currently focuses on:
 
 - Multi-account routing across **Codex** and **Kiro** providers.
 - OAuth/device/social auth flows and token lifecycle handling.
 - Quota-aware account health + cooldown + scheduling.
 - API Router controls (proxy runtime, model aliasing, Cloudflared, endpoint tester, one-click CLI config sync).
-- Local desktop-first UX with persisted JSON state in `~/.cliro-go/`.
+- Local desktop-first UX with persisted JSON state in `~/.cliro/`.
 
 ## Current Scope Snapshot
 
@@ -46,7 +46,7 @@ CLIro-Go currently focuses on:
 
 ## User Agent Spoofing
 
-CLIro-Go mimics official client user agents to ensure compatibility with upstream provider APIs.
+CLIRO mimics official client user agents to ensure compatibility with upstream provider APIs.
 
 ### Codex Provider (OpenAI)
 
@@ -121,7 +121,7 @@ Kiro requests include a random machine ID suffix to simulate unique client insta
 
 ## Data Directory
 
-CLIro-Go persists runtime data under `~/.cliro-go/`:
+CLIRO persists runtime data under `~/.cliro/`:
 
 - `config.json` - proxy, scheduling, cloudflared, model aliases, etc.
 - `accounts.json` - account and token/quota state.
@@ -151,7 +151,7 @@ go test . ./internal/...
 wails build
 ```
 
-Output (Windows): `build/bin/Cliro-Go.exe`
+Output (Windows): `build/bin/CLIRO.exe`
 
 ## Architecture
 
@@ -201,26 +201,17 @@ frontend/src/
   backend/                          # all backend access — ONLY place that imports wailsjs
     client/
       browser.ts                    # browser-mode stubs
-      index.ts                      # re-exports
       runtime-events.ts             # typed Wails event subscription helpers
       wails-client.ts               # raw Wails JS bindings wrapper
-    compat/
-      accounts-compat.ts            # WailsAccount → Account shape mapping
-      router-compat.ts              # WailsProxyStatus → ProxyStatus mapping
-      coerce.ts                     # shared coerce helpers
-      index.ts
     gateways/
       accounts-gateway.ts           # account CRUD calls
       auth-gateway.ts               # codex + kiro auth calls
       logs-gateway.ts               # getLogs / clearLogs
       router-gateway.ts             # proxy / cloudflared / alias / cli-sync calls
       system-gateway.ts             # getState / openDataDir / confirmQuit / hideToTray etc.
-      wails-gateway.ts              # single import point for all backend calls
-      index.ts
     models/
       wails.ts                      # raw Wails DTO types (WailsAccount, WailsAppState, …)
       system.ts
-      index.ts
 
   features/                         # domain features
     accounts/
@@ -339,9 +330,8 @@ Key frontend files:
   - `frontend/src/app/shell/AppFrame.svelte`
   - `frontend/src/app/utils/tabs.ts` — `APP_TABS`, `AppTabId`
 - Backend access layer:
-  - `frontend/src/backend/gateways/wails-gateway.ts` — single import point for all backend calls
-  - `frontend/src/backend/client/wails-client.ts` — raw Wails JS binding wrapper
-  - `frontend/src/backend/compat/` — Wails DTO → domain type mapping
+  - `frontend/src/backend/client/wails-client.ts` — grouped raw Wails JS binding adapter
+  - `frontend/src/backend/gateways/` — final domain-oriented frontend backend surface
 - Accounts feature:
   - `frontend/src/features/accounts/components/AccountsScreen.svelte` — container
   - `frontend/src/features/accounts/store/accounts-actions.ts`
@@ -511,7 +501,7 @@ Default base URL: `http://localhost:8095`
 ### Frontend (Svelte + TS)
 
 - **All backend access goes through `frontend/src/backend/`** — never import from `wailsjs` directly in features or UI components.
-- Use `backend/gateways/wails-gateway.ts` as the single import point for backend calls in feature API modules.
+- Use the domain gateway modules in `backend/gateways/` as the import point for backend calls in feature API modules.
 - Keep data access inside feature `api/` or `store/` modules, not ad-hoc in UI components.
 - Reuse `components/common/` primitives and `shared/` stores/utils.
 - Keep tab files thin; place business logic in `features/*` and `app/*` modules.
@@ -589,42 +579,6 @@ Default base URL: `http://localhost:8095`
 - **Why**: Wails owns the OS main thread. `systray.Run()` from `getlantern/systray` tried to own it too (via a goroutine), causing Windows to silently drop tray shell messages (`WM_RBUTTONUP`, `WM_LBUTTONUP`). `fyne.io/systray`'s `Register()` is specifically designed for embedding alongside webview/toolkit event loops.
 - **Controller interface**: unchanged — `Start()`, `SetProxyRunning()`, `Close()`, `Supported()`, `Available()` all remain stable.
 - **Non-Windows**: `controller_other.go` is a noop stub; no changes needed there.
-
-## Known Issues & Workarounds
-
-### Web Search Functionality
-
-**Issue**: Built-in `web_search` tool may not work reliably in some scenarios.
-
-**Current Status**:
-- Kiro provider supports web search via MCP (Model Context Protocol) endpoint
-- Implementation: `internal/provider/kiro/websearch.go`
-- Endpoint: `https://q.us-east-1.amazonaws.com/mcp`
-- Works for Kiro accounts when routing through CLIro-Go proxy
-
-**Known Limitation**:
-- MCP-based web search **does not work** when using Kiro provider with Claude Code client
-- This is a known compatibility issue between Kiro's MCP implementation and Claude Code's expectations
-
-**Workaround**:
-- Use external MCP servers for web search functionality with Claude Code
-- Recommended MCP servers:
-  1. **WebSearch-MCP** by mnhlt (recommended for production)
-     - Repository: `https://github.com/mnhlt/WebSearch-MCP`
-     - Self-hosted with Docker
-     - Bypass Cloudflare protection with FlareSolverr
-     - Advanced filtering options (language, region, domains, result type)
-     - Installation: `npx -y @smithery/cli install @mnhlt/WebSearch-MCP --client claude`
-  2. **web-search** by pskill9 (simple alternative)
-     - Repository: `https://github.com/pskill9/web-search`
-     - No API keys required
-     - Lightweight setup (no Docker)
-     - Note: May face rate limiting from Google
-
-**Future Work**:
-- Investigate Kiro MCP compatibility issues with Claude Code
-- Consider implementing alternative web search providers (e.g., Brave Search API, DuckDuckGo)
-- Add configuration option to disable built-in web search and rely on external MCP servers
 
 ## References
 

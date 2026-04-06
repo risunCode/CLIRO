@@ -1,25 +1,10 @@
-import type { WailsAccount, WailsCodexAuthSessionView } from '@/backend/models/wails'
+import type { WailsAccount, WailsAuthSessionView } from '@/backend/models/wails'
 
-export type Account = WailsAccount & {
-  banned?: boolean
-  bannedReason?: string
-}
+export type Account = WailsAccount
 
-export type AuthSession = WailsCodexAuthSessionView
+export type AuthSession = WailsAuthSessionView
 
-export interface KiroAuthSession {
-  sessionId: string
-  authUrl: string
-  status: string
-  error?: string
-  accountId?: string
-  email?: string
-  verificationUrl?: string
-  userCode?: string
-  expiresAt?: number
-  authMethod?: string
-  provider?: string
-}
+export type KiroAuthSession = WailsAuthSessionView
 
 export type SyncTargetID = 'kilo-cli' | 'opencode-cli' | 'codex-cli'
 
@@ -59,7 +44,7 @@ export interface CodexAuthSyncResult extends SyncResultBase {
   target: 'codex-cli'
   backupPath?: string
   backupCreated: boolean
-  syncedAt: string
+  syncedAt?: string
 }
 
 export type AccountSyncResult = KiloAuthSyncResult | OpencodeAuthSyncResult | CodexAuthSyncResult

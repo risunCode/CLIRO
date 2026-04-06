@@ -1,4 +1,4 @@
-# CLIro-Go Frontend
+# CLIRO Frontend
 
 Frontend shell for the Wails desktop app. Built with Svelte + TypeScript + Vite, and wired to the Go backend through generated Wails bindings behind a clean `backend/` boundary layer.
 
@@ -13,7 +13,7 @@ Frontend shell for the Wails desktop app. Built with Svelte + TypeScript + Vite,
 
 All backend access is centralized in `src/backend/` — feature UI and app shell never import from `wailsjs` directly.
 
-- `src/backend/` — all backend access, split into four sub-boundaries
+- `src/backend/` — all backend access, split into client, models, and gateways
 - `src/app/` — shell, bootstrap, routes/tabs, overlays, services, lib
 - `src/features/` — per-feature UI, state, lib; each exposes a public `index.ts`
 - `src/components/common/` — primitive reusable UI, domain-neutral
@@ -31,9 +31,8 @@ src/
   main.ts
   backend/
     client/       # wails-client, runtime-events, browser (low-level only)
-    compat/       # coerce, accounts-compat, router-compat (payload mappers)
-    models/       # wails type aliases
-    gateways/     # system-, logs-, accounts-, auth-, router-gateway + index.ts
+    models/       # generated Wails type aliases used by the frontend boundary
+    gateways/     # system-, logs-, accounts-, auth-, router-gateway
   app/
     bootstrap/
     modals/
@@ -66,7 +65,7 @@ src/
 
 - `app/*` → `features/<feature>/index`, `shared/*`, `backend/gateways/*`
 - `features/<feature>/*` → `shared/*`, `backend/gateways/*`, internal feature only
-- `backend/gateways/*` → `backend/client/*`, `backend/compat/*`, `backend/models/*`
+- `backend/gateways/*` → `backend/client/*`, `backend/models/*`
 - `components/common/*` → `shared/*` only
 - **Forbidden**: any `src/*` → `src-old/*`, any `app/features/*` → `wailsjs/*` directly, any cross-feature internal imports
 

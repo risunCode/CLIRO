@@ -3,7 +3,7 @@ package codex
 import (
 	"bufio"
 	"bytes"
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"cliro-go/internal/account"
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/contract/rules"
-	"cliro-go/internal/logger"
-	"cliro-go/internal/platform"
-	"cliro-go/internal/provider"
+	"cliro/internal/account"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	"cliro/internal/contract/rules"
+	"cliro/internal/logger"
+	"cliro/internal/platform"
+	"cliro/internal/provider"
 
 	"github.com/google/uuid"
 )
@@ -38,6 +38,8 @@ type Service struct {
 	pool       *account.Pool
 	log        *logger.Logger
 	httpClient *http.Client
+	retryPlan  provider.RetryPlanner
+	recovery   *provider.AuthRecoveryCoordinator
 }
 
 type accountAuth interface {
@@ -96,6 +98,8 @@ func NewService(store *config.Manager, authManager accountAuth, accountPool *acc
 		pool:       accountPool,
 		log:        log,
 		httpClient: client,
+		retryPlan:  provider.NewRetryPlanner(accountPool, "codex", nil),
+		recovery:   provider.NewAuthRecoveryCoordinator(func(accountID string) (config.Account, error) { return authManager.RefreshAccount(accountID) }, 2),
 	}
 }
 
@@ -118,8 +122,7 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 		return provider.CompletionOutcome{}, http.StatusBadRequest, "model is required", fmt.Errorf("model is required")
 	}
 
-	upstreamCandidates := s.pool.AvailableAccountsForProvider("codex")
-	if len(upstreamCandidates) == 0 {
+	if s.pool.AvailabilitySnapshot("codex").ReadyCount == 0 {
 		s.recordRequestFailure()
 		reason := s.pool.ProviderUnavailableReason("codex")
 		s.logProxyEvent("warn", "request.rejected", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("reason", reason))
@@ -128,34 +131,59 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 
 	var lastStatus int
 	var lastMessage string
+	excluded := make(map[string]bool)
+	attempt := 0
+	attemptCtx := provider.AttemptContext{RequestID: requestID, Provider: "codex", Model: req.Model, Stream: req.Stream}
+	toolNames := provider.BuildToolNameMapping(req.Tools, req.Messages, provider.DefaultToolNameLimit)
 
-	for _, candidate := range upstreamCandidates {
+	for {
+		candidate, ok := s.retryPlan.NextAccount(excluded)
+		if !ok {
+			break
+		}
+		attempt++
 		accountLabel := config.AccountLabel(candidate)
 		s.logProxyEvent("info", "request.attempt", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("account", accountLabel), logger.String("model", strings.TrimSpace(req.Model)))
 		account, err := s.auth.EnsureFreshAccount(candidate.ID)
 		if err != nil {
 			decision := provider.ClassifyHTTPFailure(http.StatusUnauthorized, err.Error())
+			result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: err, Failure: decision, RetryCause: "ensure_fresh_account", Final: true}
+			retryDecision := s.retryPlan.Decide(result)
+			result.RetryCause = retryDecision.Cause
+			result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+			provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, candidate.ID, accountLabel, result))
 			s.applyFailureDecision(requestID, candidate.ID, accountLabel, decision)
 			lastStatus = decision.Status
 			lastMessage = decision.Message
+			excluded[candidate.ID] = true
 			continue
 		}
 		accountLabel = config.AccountLabel(account)
-		refreshedAfterFailure := false
+		recoveredAuth := false
 
 		for {
-			upstreamReq, err := s.buildRequest(ctx, account, req)
+			upstreamReq, err := s.buildRequest(ctx, account, req, toolNames)
 			if err != nil {
 				s.recordRequestFailure()
 				return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
 			}
 
+			openStarted := time.Now()
 			resp, err := s.httpClient.Do(upstreamReq)
+			openDuration := time.Since(openStarted)
 			if err != nil {
 				decision := provider.ClassifyTransportFailure(err)
+				result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: err, Failure: decision, UpstreamOpen: openDuration, RetryCause: "transport_error"}
+				retryDecision := s.retryPlan.Decide(result)
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
 				lastStatus = decision.Status
 				lastMessage = decision.Message
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
 				break
 			}
 
@@ -163,18 +191,25 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 				data, _ := io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				decision := s.handleUpstreamFailure(account, resp.StatusCode, data)
-				if decision.Class == provider.FailureAuthRefreshable && !refreshedAfterFailure {
-					refreshedAccount, refreshErr := s.auth.RefreshAccount(account.ID)
+				result := provider.AttemptResult{Attempt: attempt, Status: resp.StatusCode, Message: decision.Message, Failure: decision, UpstreamOpen: openDuration, RecoveredAuth: recoveredAuth, RetryCause: "upstream_http_error"}
+				retryDecision := s.retryPlan.Decide(result)
+				if retryDecision.RefreshAuth {
+					refreshedAccount, recoveryStatus, refreshErr := s.recovery.Recover(ctx, "codex", account.ID)
 					if refreshErr == nil {
 						account = refreshedAccount
 						accountLabel = config.AccountLabel(account)
-						refreshedAfterFailure = true
-						s.logAuthEvent("info", "auth.token_refreshed_retry", requestID, logger.String("account", accountLabel))
+						recoveredAuth = true
+						s.logAuthEvent("info", "auth.token_refreshed_retry", requestID, logger.String("account", accountLabel), logger.String("recovery_status", string(recoveryStatus)))
 						continue
 					}
 					decision = provider.ClassifyHTTPFailure(http.StatusUnauthorized, refreshErr.Error())
+					result = provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: refreshErr, Failure: decision, UpstreamOpen: openDuration, RecoveredAuth: true, RetryCause: "auth_refresh_rejected"}
+					retryDecision = s.retryPlan.Decide(result)
 				}
 
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
 				lastStatus = decision.Status
 				lastMessage = decision.Message
@@ -182,16 +217,42 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 					s.recordRequestFailure()
 					return provider.CompletionOutcome{}, decision.Status, decision.Message, fmt.Errorf(decision.Message)
 				}
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
 				break
 			}
 
-			outcome, err := s.collectCompletion(resp.Body, req.Model)
+			outcome, err := s.collectCompletion(resp.Body, req.Model, toolNames)
 			_ = resp.Body.Close()
 			if err != nil {
 				decision := provider.ClassifyTransportFailure(err)
+				result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: err, Failure: decision, UpstreamOpen: openDuration, UpstreamReadable: true, RetryCause: "stream_parse_error"}
+				retryDecision := s.retryPlan.Decide(result)
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
 				lastStatus = decision.Status
 				lastMessage = decision.Message
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
+				break
+			}
+			if !provider.CompletionHasVisibleOutput(outcome) {
+				decision := provider.FailureDecision{Class: provider.FailureEmptyStream, Message: "empty stream", RetryAllowed: true, Status: http.StatusBadGateway}
+				result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Failure: decision, UpstreamOpen: openDuration, UpstreamReadable: true, EmptyStream: true, RetryCause: "empty_stream"}
+				retryDecision := s.retryPlan.Decide(result)
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
+				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
+				lastStatus = decision.Status
+				lastMessage = decision.Message
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
 				break
 			}
 			outcome.Provider = "codex"
@@ -199,6 +260,7 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 			outcome.AccountLabel = accountLabel
 
 			s.markSuccess(requestID, account.ID, accountLabel, outcome.Usage)
+			provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, provider.AttemptResult{Attempt: attempt, Success: true, Final: true, UpstreamOpen: openDuration, UpstreamReadable: true, CompletionHasOutput: true}))
 			return outcome, 0, "", nil
 		}
 	}
@@ -219,8 +281,8 @@ func (s *Service) Complete(ctx context.Context, req provider.ChatRequest) (provi
 	return provider.CompletionOutcome{}, lastStatus, lastMessage, fmt.Errorf(lastMessage)
 }
 
-func (s *Service) buildRequest(ctx context.Context, account config.Account, req provider.ChatRequest) (*http.Request, error) {
-	payload, err := s.buildRequestPayload(req)
+func (s *Service) buildRequest(ctx context.Context, account config.Account, req provider.ChatRequest, toolNames provider.ToolNameMapping) (*http.Request, error) {
+	payload, _, err := s.buildRequestPayloadWithToolNames(provider.RemapChatRequestToolNames(req, toolNames))
 	if err != nil {
 		return nil, fmt.Errorf("messages are empty")
 	}
@@ -247,7 +309,7 @@ func (s *Service) buildRequest(ctx context.Context, account config.Account, req 
 	return httpReq, nil
 }
 
-func (s *Service) collectCompletion(body io.Reader, model string) (provider.CompletionOutcome, error) {
+func (s *Service) collectCompletion(body io.Reader, model string, toolNames provider.ToolNameMapping) (provider.CompletionOutcome, error) {
 	var out provider.CompletionOutcome
 	out.ID = "chatcmpl-" + uuid.NewString()
 	out.Model = model
@@ -285,14 +347,14 @@ func (s *Service) collectCompletion(body io.Reader, model string) (provider.Comp
 				thinkingBuilder.WriteString(event.Text)
 			}
 		case "response.output_item.done":
-			collectResponseItem(&textBuilder, &thinkingBuilder, &toolUses, seenToolUseIDs, event.Item)
+			collectResponseItem(&textBuilder, &thinkingBuilder, &toolUses, seenToolUseIDs, event.Item, toolNames)
 		case "response.completed":
 			out.ID = util.FirstNonEmpty(event.Response.ID, out.ID)
 			out.Usage.PromptTokens = event.Response.Usage.InputTokens
 			out.Usage.CompletionTokens = event.Response.Usage.OutputTokens
 			out.Usage.TotalTokens = event.Response.Usage.TotalTokens
 			for _, item := range event.Response.Output {
-				collectResponseItem(&textBuilder, &thinkingBuilder, &toolUses, seenToolUseIDs, item)
+				collectResponseItem(&textBuilder, &thinkingBuilder, &toolUses, seenToolUseIDs, item, toolNames)
 			}
 		case "error":
 			return out, fmt.Errorf(util.FirstNonEmpty(event.Error.Message, "upstream error"))
@@ -310,18 +372,18 @@ func (s *Service) collectCompletion(body io.Reader, model string) (provider.Comp
 	} else {
 		out.ThinkingSource = "none"
 	}
-	out.ToolUses = toolUses
+	out.ToolUses = provider.RestoreToolUseNames(toolUses, toolNames)
 	if out.Usage.TotalTokens == 0 {
 		out.Usage.TotalTokens = out.Usage.PromptTokens + out.Usage.CompletionTokens
 	}
 	return out, nil
 }
 
-func collectResponseItem(textBuilder *strings.Builder, thinkingBuilder *strings.Builder, toolUses *[]provider.ToolUse, seenToolUseIDs map[string]struct{}, item responseItem) {
+func collectResponseItem(textBuilder *strings.Builder, thinkingBuilder *strings.Builder, toolUses *[]provider.ToolUse, seenToolUseIDs map[string]struct{}, item responseItem, toolNames provider.ToolNameMapping) {
 	switch strings.ToLower(strings.TrimSpace(item.Type)) {
 	case "function_call":
 		toolUseID := util.FirstNonEmpty(strings.TrimSpace(item.CallID), strings.TrimSpace(item.ID))
-		toolName := strings.TrimSpace(item.Name)
+		toolName := toolNames.Restore(item.Name)
 		if toolUseID == "" || toolName == "" {
 			return
 		}

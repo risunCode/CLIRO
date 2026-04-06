@@ -19,6 +19,7 @@ type windowsController struct {
 	available       bool
 	proxyRunning    bool
 	callbacks       MenuCallbacks
+	stopLoop        func()
 	openItem        *systray.MenuItem
 	toggleProxyItem *systray.MenuItem
 	exitItem        *systray.MenuItem
@@ -58,7 +59,11 @@ func (c *windowsController) Start(_ context.Context, callbacks MenuCallbacks) er
 	}
 	c.mu.Unlock()
 
-	systray.Register(c.onReady, c.onExit)
+	startLoop, stopLoop := systray.RunWithExternalLoop(c.onReady, c.onExit)
+	c.mu.Lock()
+	c.stopLoop = stopLoop
+	c.mu.Unlock()
+	startLoop()
 	return nil
 }
 
@@ -74,13 +79,21 @@ func (c *windowsController) SetProxyRunning(running bool) {
 }
 
 func (c *windowsController) Close() error {
+	c.mu.Lock()
+	stopLoop := c.stopLoop
+	c.stopLoop = nil
+	c.mu.Unlock()
+	if stopLoop != nil {
+		stopLoop()
+		return nil
+	}
 	systray.Quit()
 	return nil
 }
 
 func (c *windowsController) onReady() {
-	systray.SetTitle("CLIro-Go")
-	systray.SetTooltip("CLIro-Go")
+	systray.SetTitle("CLIRO")
+	systray.SetTooltip("CLIRO")
 	if len(trayIcon) > 0 {
 		systray.SetIcon(trayIcon)
 	}
@@ -90,7 +103,7 @@ func (c *windowsController) onReady() {
 	c.openItem = systray.AddMenuItem("Open / Bring to Front", "Restore app window")
 	c.toggleProxyItem = systray.AddMenuItem(proxyToggleTitle(proxyRunning), "Toggle API Router Proxy")
 	systray.AddSeparator()
-	c.exitItem = systray.AddMenuItem("Exit App", "Exit CLIro-Go")
+	c.exitItem = systray.AddMenuItem("Exit App", "Exit CLIRO")
 	c.available = true
 	openCh := c.openItem.ClickedCh
 	toggleCh := c.toggleProxyItem.ClickedCh

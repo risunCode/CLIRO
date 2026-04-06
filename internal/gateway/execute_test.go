@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/logger"
-	"cliro-go/internal/platform"
-	provider "cliro-go/internal/provider"
-	kiroprovider "cliro-go/internal/provider/kiro"
+	contract "cliro/internal/contract"
+	"cliro/internal/logger"
+	"cliro/internal/platform"
+	provider "cliro/internal/provider"
+	kiroprovider "cliro/internal/provider/kiro"
 )
 
 type recordingExecutor struct {
@@ -206,5 +206,27 @@ func TestHandleAnthropicMessagesLiveStream_EmitsToolUseBlocksFromOutcome(t *test
 	toolDeltaIndex := strings.Index(body, `"partial_json":"{\"file_path\":\"README.md\"}"`)
 	if textStopIndex == -1 || toolDeltaIndex == -1 || toolDeltaIndex < textStopIndex {
 		t.Fatalf("expected tool block after text block stop, got %s", body)
+	}
+}
+
+func TestHandleAnthropicMessagesLiveStream_WritesJSONErrorBeforeAnyStreamBody(t *testing.T) {
+	server, _, _ := newTestServer(t)
+	executor := &recordingLiveExecutor{recordingExecutor: recordingExecutor{status: http.StatusServiceUnavailable, message: "no available kiro accounts", err: context.DeadlineExceeded}, callbackEvents: []kiroprovider.StreamEvent{{}}}
+	server.kiro = executor
+
+	req := httptest.NewRequest(http.MethodPost, RouteAnthropicMessages, strings.NewReader(`{"model":"claude-sonnet-4.5","max_tokens":64,"stream":true,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
+	rr := httptest.NewRecorder()
+
+	server.handleAnthropicMessages(rr, req)
+
+	if !strings.Contains(rr.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected json error response, got %q", rr.Header().Get("Content-Type"))
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "message_start") {
+		t.Fatalf("unexpected SSE body: %s", body)
+	}
+	if !strings.Contains(body, "no available kiro accounts") {
+		t.Fatalf("unexpected error body: %s", body)
 	}
 }

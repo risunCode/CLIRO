@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"cliro-go/internal/protocol/anthropic"
-	provider "cliro-go/internal/provider"
+	"cliro/internal/protocol/anthropic"
+	provider "cliro/internal/provider"
 )
 
 func TestBuildRequestPayload_UsesStrictResponsesContentTypes(t *testing.T) {
@@ -115,7 +115,7 @@ func TestCollectCompletion_DecodesFunctionCallsAndRemapsArgs(t *testing.T) {
 		``,
 	}, "\n"))
 
-	out, err := service.collectCompletion(body, "gpt-5.4")
+	out, err := service.collectCompletion(body, "gpt-5.4", provider.ToolNameMapping{})
 	if err != nil {
 		t.Fatalf("collectCompletion: %v", err)
 	}

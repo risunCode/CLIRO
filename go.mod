@@ -1,4 +1,4 @@
-module cliro-go
+module cliro
 
 go 1.23
 

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	provider "cliro-go/internal/provider"
+	provider "cliro/internal/provider"
 )
 
 type normalizedMessage struct {
@@ -241,11 +241,9 @@ func ensureValidToolUsesAndResults(messages []normalizedMessage) []normalizedMes
 				if id == "" {
 					continue
 				}
-				// If tool use ID not found, mark as error
-				if _, exists := toolUseIDs[id]; !exists {
-					tr.Status = "error"
-					tr.Content = []toolResultContent{{Text: "Tool use not found"}}
-				}
+				// Relaxed validation: keep tool results even if tool use ID not found
+				// This prevents false rejections when timing or format issues occur
+				// The Kiro API will handle validation on its end
 				validResults = append(validResults, tr)
 			}
 			msg.ToolResults = validResults
@@ -303,24 +301,9 @@ func expandToolUseResultPairs(messages []normalizedMessage) []normalizedMessage 
 		return nil
 	}
 
+	// Keep multiple tool uses in single message instead of splitting
 	expanded := make([]normalizedMessage, 0, len(messages))
-	for index := 0; index < len(messages); index++ {
-		message := messages[index]
-		if message.Role == "assistant" && len(message.ToolUses) > 1 {
-			var next *normalizedMessage
-			if index+1 < len(messages) && messages[index+1].Role == "user" && len(messages[index+1].ToolResults) > 0 {
-				next = &messages[index+1]
-			}
-			expanded = append(expanded, splitAssistantToolUses(message, next)...)
-			if next != nil {
-				index++
-			}
-			continue
-		}
-		if message.Role == "user" && len(message.ToolResults) > 1 {
-			expanded = append(expanded, splitUserToolResults(message)...)
-			continue
-		}
+	for _, message := range messages {
 		expanded = append(expanded, message)
 	}
 	return expanded

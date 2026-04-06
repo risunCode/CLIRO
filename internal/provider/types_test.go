@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 func TestChatRequestThinkingFieldsAreAvailable(t *testing.T) {

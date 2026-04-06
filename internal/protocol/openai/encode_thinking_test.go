@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 func TestIRToChat_PreservesThinkingBlocksInAdditionalKwargs(t *testing.T) {

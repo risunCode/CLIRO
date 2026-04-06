@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"cliro-go/internal/route"
+	"cliro/internal/route"
 )
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +29,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"name":    "CLIro-Go Gateway",
+		"name":    "CLIRO Gateway",
 		"status":  "ok",
 		"running": s.Running(),
 		"routes": []string{

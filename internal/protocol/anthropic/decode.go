@@ -1,12 +1,12 @@
 package anthropic
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 
 	"github.com/google/uuid"
 )
@@ -27,6 +27,7 @@ func MessagesToIR(req MessagesRequest) (contract.Request, error) {
 		messages = append(messages, anthropicMessageToIRMessages(message)...)
 	}
 	messages = mergeConsecutiveMessages(messages)
+	messages = sanitizeToolHistory(messages)
 	if len(messages) == 0 {
 		return contract.Request{}, fmt.Errorf("messages are empty")
 	}
@@ -143,6 +144,79 @@ func cloneMessage(message contract.Message) contract.Message {
 		cloned.ThinkingBlocks = append([]contract.ThinkingBlock(nil), message.ThinkingBlocks...)
 	}
 	return cloned
+}
+
+func sanitizeToolHistory(messages []contract.Message) []contract.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	declared := make(map[string]struct{})
+	seenResults := make(map[string]struct{})
+	sanitized := make([]contract.Message, 0, len(messages))
+	for _, message := range messages {
+		current := cloneMessage(message)
+		if current.Role == contract.RoleAssistant && len(current.ToolCalls) > 0 {
+			filteredCalls := make([]contract.ToolCall, 0, len(current.ToolCalls))
+			seenCalls := make(map[string]struct{}, len(current.ToolCalls))
+			for _, call := range current.ToolCalls {
+				name := strings.TrimSpace(call.Name)
+				if name == "" {
+					continue
+				}
+				id := strings.TrimSpace(call.ID)
+				if id == "" {
+					id = "toolu_" + uuid.NewString()[:8]
+				}
+				if _, ok := seenCalls[id]; ok {
+					continue
+				}
+				seenCalls[id] = struct{}{}
+				declared[id] = struct{}{}
+				call.ID = id
+				call.Name = name
+				if strings.TrimSpace(call.Arguments) == "" {
+					call.Arguments = "{}"
+				}
+				filteredCalls = append(filteredCalls, call)
+			}
+			current.ToolCalls = filteredCalls
+			if len(current.ToolCalls) == 0 && strings.TrimSpace(messageContentToText(current.Content)) == "" && len(current.ThinkingBlocks) == 0 {
+				continue
+			}
+			sanitized = append(sanitized, current)
+			continue
+		}
+
+		if current.Role == contract.RoleTool {
+			id := strings.TrimSpace(current.ToolCallID)
+			if id == "" {
+				current.Role = contract.RoleUser
+				current.ToolCallID = ""
+				if strings.TrimSpace(messageContentToText(current.Content)) == "" {
+					continue
+				}
+				sanitized = append(sanitized, current)
+				continue
+			}
+			if _, ok := declared[id]; !ok {
+				current.Role = contract.RoleUser
+				current.ToolCallID = ""
+				if strings.TrimSpace(messageContentToText(current.Content)) == "" {
+					continue
+				}
+				sanitized = append(sanitized, current)
+				continue
+			}
+			if _, ok := seenResults[id]; ok {
+				continue
+			}
+			seenResults[id] = struct{}{}
+		}
+
+		sanitized = append(sanitized, current)
+	}
+	return sanitized
 }
 
 func mergeMessageContent(current any, next any) any {

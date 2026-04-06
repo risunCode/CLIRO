@@ -1,24 +1,30 @@
 package codex
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"cliro-go/internal/provider"
+	"cliro/internal/provider"
 
 	"github.com/google/uuid"
 )
 
 func (s *Service) buildRequestPayload(req provider.ChatRequest) (map[string]any, error) {
+	payload, _, err := s.buildRequestPayloadWithToolNames(req)
+	return payload, err
+}
+
+func (s *Service) buildRequestPayloadWithToolNames(req provider.ChatRequest) (map[string]any, provider.ToolNameMapping, error) {
+	mapping := provider.BuildToolNameMapping(req.Tools, req.Messages, provider.DefaultToolNameLimit)
 	input := make([]any, 0, len(req.Messages))
 	for _, msg := range req.Messages {
-		items := s.codexMessageItems(msg)
+		items := s.codexMessageItems(msg, mapping)
 		input = append(input, items...)
 	}
 	if len(input) == 0 {
-		return nil, fmt.Errorf("messages are empty")
+		return nil, mapping, fmt.Errorf("messages are empty")
 	}
 	payload := map[string]any{
 		"model":               req.Model,
@@ -59,15 +65,15 @@ func (s *Service) buildRequestPayload(req provider.ChatRequest) (map[string]any,
 		}
 	}
 	if len(req.Tools) > 0 {
-		payload["tools"] = s.codexTools(req.Tools)
+		payload["tools"] = s.codexTools(req.Tools, mapping)
 	}
 	if req.ToolChoice != nil && req.ToolChoice != "" {
 		payload["tool_choice"] = req.ToolChoice
 	}
-	return payload, nil
+	return payload, mapping, nil
 }
 
-func (s *Service) codexMessageItems(msg provider.Message) []any {
+func (s *Service) codexMessageItems(msg provider.Message, mapping provider.ToolNameMapping) []any {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "system", "developer":
@@ -82,7 +88,7 @@ func (s *Service) codexMessageItems(msg provider.Message) []any {
 			items = append(items, map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": text}}})
 		}
 		for _, toolCall := range msg.ToolCalls {
-			name := strings.TrimSpace(toolCall.Function.Name)
+			name := mapping.Remap(toolCall.Function.Name)
 			if name == "" {
 				continue
 			}
@@ -108,10 +114,10 @@ func (s *Service) codexMessageItems(msg provider.Message) []any {
 	}
 }
 
-func (s *Service) codexTools(tools []provider.Tool) []any {
+func (s *Service) codexTools(tools []provider.Tool, mapping provider.ToolNameMapping) []any {
 	converted := make([]any, 0, len(tools))
 	for _, tool := range tools {
-		name := strings.TrimSpace(tool.Function.Name)
+		name := mapping.Remap(tool.Function.Name)
 		if name == "" {
 			continue
 		}
@@ -119,7 +125,7 @@ func (s *Service) codexTools(tools []provider.Tool) []any {
 			"type":        "function",
 			"name":        name,
 			"description": strings.TrimSpace(tool.Function.Description),
-			"parameters":  tool.Function.Parameters,
+			"parameters":  provider.NormalizeToolSchema(tool.Function.Parameters),
 		})
 	}
 	if len(converted) == 0 {

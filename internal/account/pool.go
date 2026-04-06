@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
 // ValidateProvider returns an error if the provider string is not a supported value.

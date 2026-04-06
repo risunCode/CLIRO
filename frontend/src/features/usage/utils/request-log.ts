@@ -90,6 +90,15 @@ const isUsageCompletionEvent = (entry: LogEntry): boolean => {
   return getStringField(entry, 'phase') === 'provider_completed'
 }
 
+const isUsageMetadataEvent = (entry: LogEntry): boolean => {
+  if (entry.scope !== 'proxy') {
+    return false
+  }
+
+  const eventName = (entry.event || '').trim()
+  return eventName === 'request.provider_completed' || eventName === 'request.routed' || eventName === 'thinking.decision'
+}
+
 const requestLogQuality = (entry: ParsedRequestLog): number => {
   let score = 0
   if (entry.model !== '-') {
@@ -114,11 +123,17 @@ export const toRequestLog = (entry: LogEntry): ParsedRequestLog | null => {
     return null
   }
 
+  const model =
+    getStringField(entry, 'model') ||
+    getStringField(entry, 'resolved_model') ||
+    getStringField(entry, 'requested_model') ||
+    '-'
+
   return {
     requestId: (entry.requestId || getStringField(entry, 'request_id')).trim(),
     timestamp: Number(entry.timestamp || 0),
     provider,
-    model: getStringField(entry, 'model') || '-',
+    model,
     account: getStringField(entry, 'account') || '-',
     promptTokens: getNumberField(entry, 'prompt_tokens') || getNumberField(entry, 'input_tokens'),
     completionTokens: getNumberField(entry, 'completion_tokens') || getNumberField(entry, 'output_tokens'),
@@ -127,6 +142,41 @@ export const toRequestLog = (entry: LogEntry): ParsedRequestLog | null => {
 }
 
 export const getRequestLogs = (logs: LogEntry[]): ParsedRequestLog[] => {
+  const metadataByRequestId = new Map<
+    string,
+    {
+      model: string
+      account: string
+      provider: UsageProvider | ''
+    }
+  >()
+
+  for (const entry of logs) {
+    if (!isUsageMetadataEvent(entry)) {
+      continue
+    }
+
+    const requestId = (entry.requestId || getStringField(entry, 'request_id')).trim()
+    if (!requestId) {
+      continue
+    }
+
+    const existing = metadataByRequestId.get(requestId) ?? { model: '', account: '', provider: '' }
+    const nextModel =
+      getStringField(entry, 'model') ||
+      getStringField(entry, 'resolved_model') ||
+      getStringField(entry, 'requested_model') ||
+      existing.model
+    const nextAccount = getStringField(entry, 'account') || existing.account
+    const nextProvider = normalizeProvider(getStringField(entry, 'provider')) || existing.provider
+
+    metadataByRequestId.set(requestId, {
+      model: nextModel,
+      account: nextAccount,
+      provider: nextProvider
+    })
+  }
+
   const parsedLogs = logs.map(toRequestLog).filter((item): item is ParsedRequestLog => item !== null)
   const deduped: ParsedRequestLog[] = []
   const indexByKey = new Map<string, number>()
@@ -146,7 +196,21 @@ export const getRequestLogs = (logs: LogEntry[]): ParsedRequestLog[] => {
     }
   }
 
-  return deduped
+  return deduped.map((item) => {
+    if (!item.requestId) {
+      return item
+    }
+    const metadata = metadataByRequestId.get(item.requestId)
+    if (!metadata) {
+      return item
+    }
+    return {
+      ...item,
+      model: item.model !== '-' ? item.model : metadata.model || '-',
+      account: item.account !== '-' ? item.account : metadata.account || '-',
+      provider: item.provider || metadata.provider || item.provider
+    }
+  })
 }
 
 export const getRecentRequests = (requestLogs: ParsedRequestLog[], limit = 10): ParsedRequestLog[] => [...requestLogs].reverse().slice(0, limit)

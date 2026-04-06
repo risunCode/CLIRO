@@ -1,12 +1,12 @@
 package openai
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"encoding/json"
 	"strings"
 	"time"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 
 	"github.com/google/uuid"
 )
@@ -72,7 +72,7 @@ func IRToCompletions(resp contract.Response) CompletionsResponse {
 
 func IRToResponses(resp contract.Response) ResponsesResponse {
 	output := make([]ResponsesOutputItem, 0, 1+len(resp.ToolCalls))
-	if strings.TrimSpace(resp.Text) != "" || len(resp.ToolCalls) == 0 {
+	if strings.TrimSpace(resp.Text) != "" || strings.TrimSpace(resp.Thinking) != "" || len(resp.ToolCalls) == 0 {
 		messageContent := ResponsesContentPart{
 			Type:        "output_text",
 			Text:        resp.Text,

@@ -8,6 +8,7 @@
   export let activeTab: AppTabId = 'dashboard'
   export let theme: Theme = 'light'
   export let onSelectTab: (tab: AppTabId) => void = () => {}
+  export let onPrefetchTab: (tab: AppTabId) => void = () => {}
   export let onToggleTheme: () => void = () => {}
 
   const appVersion = 'v0.3.0'
@@ -75,6 +76,8 @@
                 : 'border-transparent text-text-secondary hover:text-text-primary'
             }`}
             on:click={() => onSelectTab(tab.id)}
+            on:mouseenter={() => onPrefetchTab(tab.id)}
+            on:focus={() => onPrefetchTab(tab.id)}
             variant="ghost"
             size="sm"
           >

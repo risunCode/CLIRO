@@ -106,41 +106,42 @@
       </div>
 
       <div class="usage-flow-map">
-        <svg class="usage-flow-svg" viewBox="0 0 860 420" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M198 210 C 278 210, 336 210, 392 210" class={`usage-flow-line ${codexActive ? 'is-active' : ''}`} />
-          <path d="M468 210 C 524 210, 582 210, 662 210" class={`usage-flow-line ${kiroActive ? 'is-active' : ''}`} />
-        </svg>
+        <div class="usage-flow-stage">
+          <article class="usage-provider-node usage-provider-node-left">
+            <div class="usage-provider-icon-shell">
+              <img src={providerNodes[0].icon} alt={providerNodes[0].label} class="usage-provider-icon" />
+            </div>
+            <div>
+              <p class="usage-node-title">{providerNodes[0].label}</p>
+              <p class="usage-node-subtitle">{providerNodes[0].subtitle}</p>
+              <p class="usage-node-meta">{formatNumber(providerNodes[0].enabledAccounts)} enabled · {formatNumber(providerNodes[0].requests)} req</p>
+            </div>
+          </article>
 
-        <article class="usage-provider-node usage-provider-node-left">
-          <div class="usage-provider-icon-shell">
-            <img src={providerNodes[0].icon} alt={providerNodes[0].label} class="usage-provider-icon" />
-          </div>
-          <div>
-            <p class="usage-node-title">{providerNodes[0].label}</p>
-            <p class="usage-node-subtitle">{providerNodes[0].subtitle}</p>
-            <p class="usage-node-meta">{formatNumber(providerNodes[0].enabledAccounts)} enabled · {formatNumber(providerNodes[0].requests)} req</p>
-          </div>
-        </article>
+          <div class={`usage-flow-connector usage-flow-connector-left ${codexActive ? 'is-active' : ''}`} aria-hidden="true"></div>
 
-        <article class="usage-center-node">
-          <div class="usage-center-ring"></div>
-          <div class="usage-provider-icon-shell usage-center-icon-shell">
-            <img src={cliroIcon} alt="CLIRO" class="usage-provider-icon" />
-          </div>
-          <p class="usage-center-title">CLIRO</p>
-          <p class="usage-center-meta">Local proxy router</p>
-        </article>
+          <article class="usage-center-node">
+            <div class="usage-center-ring"></div>
+            <div class="usage-provider-icon-shell usage-center-icon-shell">
+              <img src={cliroIcon} alt="CLIRO" class="usage-provider-icon" />
+            </div>
+            <p class="usage-center-title">CLIRO</p>
+            <p class="usage-center-meta">Local proxy router</p>
+          </article>
 
-        <article class="usage-provider-node usage-provider-node-right">
-          <div class="usage-provider-icon-shell">
-            <img src={providerNodes[1].icon} alt={providerNodes[1].label} class="usage-provider-icon" />
-          </div>
-          <div>
-            <p class="usage-node-title">{providerNodes[1].label}</p>
-            <p class="usage-node-subtitle">{providerNodes[1].subtitle}</p>
-            <p class="usage-node-meta">{formatNumber(providerNodes[1].enabledAccounts)} enabled · {formatNumber(providerNodes[1].requests)} req</p>
-          </div>
-        </article>
+          <div class={`usage-flow-connector usage-flow-connector-right ${kiroActive ? 'is-active' : ''}`} aria-hidden="true"></div>
+
+          <article class="usage-provider-node usage-provider-node-right">
+            <div class="usage-provider-icon-shell">
+              <img src={providerNodes[1].icon} alt={providerNodes[1].label} class="usage-provider-icon" />
+            </div>
+            <div>
+              <p class="usage-node-title">{providerNodes[1].label}</p>
+              <p class="usage-node-subtitle">{providerNodes[1].subtitle}</p>
+              <p class="usage-node-meta">{formatNumber(providerNodes[1].enabledAccounts)} enabled · {formatNumber(providerNodes[1].requests)} req</p>
+            </div>
+          </article>
+        </div>
       </div>
     </SurfaceCard>
 
@@ -218,7 +219,6 @@
   }
 
   .usage-flow-map {
-    position: relative;
     min-height: 262px;
     overflow: hidden;
     background:
@@ -226,32 +226,40 @@
       linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0.005));
   }
 
-  .usage-flow-svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+  .usage-flow-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(2.5rem, 6vw, 4.75rem) clamp(7.5rem, 14vw, 8.5rem) clamp(2.5rem, 6vw, 4.75rem) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(0.5rem, 1vw, 1rem);
+    min-height: 262px;
+    width: min(100%, 50rem);
+    margin: 0 auto;
+    padding: clamp(1rem, 2.6vw, 1.85rem);
   }
 
-  .usage-flow-line {
-    fill: none;
-    stroke: color-mix(in srgb, var(--color-border) 60%, transparent);
-    stroke-width: 3;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-dasharray: 11 15;
+  .usage-flow-connector {
+    height: 3px;
+    border-radius: 999px;
     opacity: 0.68;
+    background: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-border) 60%, transparent) 0 12px,
+      transparent 12px 24px
+    );
   }
 
-  .usage-flow-line.is-active {
-    stroke: color-mix(in srgb, var(--accent-primary) 75%, #f8fafc);
+  .usage-flow-connector.is-active {
     opacity: 1;
+    background: repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent-primary) 75%, #f8fafc) 0 12px,
+      transparent 12px 24px
+    );
     animation: usage-flow-dash 1.2s linear infinite;
   }
 
   .usage-provider-node,
   .usage-center-node {
-    position: absolute;
     display: flex;
     align-items: center;
     gap: 0.52rem;
@@ -263,28 +271,24 @@
   }
 
   .usage-provider-node-left {
-    left: 5.5%;
-    top: 50%;
-    transform: translateY(-50%);
+    justify-self: start;
+    width: min(100%, 11rem);
   }
 
   .usage-provider-node-right {
-    right: 5.5%;
-    top: 50%;
-    transform: translateY(-50%);
+    justify-self: end;
+    width: min(100%, 11rem);
   }
 
   .usage-center-node {
-    left: 50%;
-    top: 50%;
     width: 132px;
     flex-direction: column;
     justify-content: center;
     gap: 0.34rem;
     text-align: center;
-    transform: translate(-50%, -50%);
     padding: 0.68rem 0.62rem;
     background: color-mix(in srgb, var(--color-surface) 88%, rgba(255, 255, 255, 0.05));
+    justify-self: center;
   }
 
   .usage-center-ring {
@@ -400,25 +404,45 @@
 
   @keyframes usage-flow-dash {
     from {
-      stroke-dashoffset: 0;
+      background-position: 0 0;
     }
 
     to {
-      stroke-dashoffset: -52;
+      background-position: -48px 0;
     }
   }
 
-  @media (max-width: 1024px) {
-    .usage-flow-map {
-      min-height: 236px;
+  @media (max-width: 1120px) {
+    .usage-flow-stage {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 0.9rem;
+      min-height: 320px;
+      width: min(100%, 20rem);
     }
 
-    .usage-provider-node-left {
-      left: 4%;
+    .usage-flow-connector {
+      width: 3px;
+      height: 2.8rem;
+      background: repeating-linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--color-border) 60%, transparent) 0 12px,
+        transparent 12px 24px
+      );
     }
 
-    .usage-provider-node-right {
-      right: 4%;
+    .usage-flow-connector.is-active {
+      background: repeating-linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accent-primary) 75%, #f8fafc) 0 12px,
+        transparent 12px 24px
+      );
+    }
+
+    .usage-provider-node-left,
+    .usage-provider-node-right,
+    .usage-center-node {
+      justify-self: center;
     }
   }
 
@@ -435,33 +459,8 @@
       display: none;
     }
 
-    .usage-flow-map {
-      min-height: 360px;
-    }
-
-    .usage-provider-node-left,
-    .usage-provider-node-right,
-    .usage-center-node {
-      left: 50%;
-      right: auto;
-      transform: translateX(-50%);
-    }
-
-    .usage-provider-node-left {
-      top: 16%;
-    }
-
-    .usage-center-node {
-      top: 50%;
-      transform: translate(-50%, -50%);
-    }
-
-    .usage-provider-node-right {
-      top: 82%;
-    }
-
-    .usage-flow-svg {
-      display: none;
+    .usage-provider-node {
+      width: min(100%, 19rem);
     }
   }
 </style>

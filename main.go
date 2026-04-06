@@ -16,12 +16,12 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:             "cliro-go",
+		Title:             "CLIRO",
 		Width:             1200,
 		Height:            700,
 		HideWindowOnClose: false,
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               "cliro-go-single-instance-v1",
+			UniqueId:               "cliro-single-instance-v1",
 			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
 		},
 		AssetServer: &assetserver.Options{

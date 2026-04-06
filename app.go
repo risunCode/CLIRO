@@ -13,16 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"cliro-go/internal/account"
-	"cliro-go/internal/auth"
-	"cliro-go/internal/cloudflared"
-	"cliro-go/internal/config"
-	"cliro-go/internal/gateway"
-	"cliro-go/internal/logger"
-	"cliro-go/internal/platform"
-	providerquota "cliro-go/internal/provider/quota"
-	"cliro-go/internal/sync/cliconfig"
-	"cliro-go/internal/tray"
+	"cliro/internal/account"
+	"cliro/internal/auth"
+	"cliro/internal/cloudflared"
+	"cliro/internal/config"
+	"cliro/internal/gateway"
+	"cliro/internal/logger"
+	"cliro/internal/platform"
+	providerquota "cliro/internal/provider/quota"
+	"cliro/internal/sync/cliconfig"
+	"cliro/internal/tray"
 
 	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -233,7 +233,7 @@ func resolveDataDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, ".cliro-go"), nil
+	return filepath.Join(homeDir, ".cliro"), nil
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -291,7 +291,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.initTray(ctx)
 	a.syncTrayProxyState()
-	a.log.Info("app", "CLIro-Go backend initialized")
+	a.log.Info("app", "CLIRO backend initialized")
 }
 
 func (a *App) shutdown(_ context.Context) {
@@ -1311,7 +1311,7 @@ func buildSecondLaunchNotice(data options.SecondInstanceData) SecondLaunchNotice
 		}
 	}
 
-	message := "CLIro-Go is already running. Restored the existing window."
+	message := "CLIRO is already running. Restored the existing window."
 	if isKiroAuth {
 		message = "App Restored: Kiro account logging in, please wait..."
 	}

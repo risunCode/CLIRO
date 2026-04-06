@@ -1,5 +1,5 @@
 import { wailsClient } from '@/backend/client/wails-client'
-import { toAccountSyncResult } from '@/backend/compat/accounts-compat'
+import type { WailsAuthSyncResult } from '@/backend/models/wails'
 import type { Account, AccountAction, AccountSyncResult, QuotaAction, SyncTargetID } from '@/features/accounts/types'
 
 export interface RunAccountActionInput {
@@ -10,6 +10,14 @@ export interface RunAccountActionInput {
 export interface RunQuotaActionInput {
   action: QuotaAction
   accountId?: string
+}
+
+const toAccountSyncResult = (result: WailsAuthSyncResult): AccountSyncResult => {
+  if (result.target !== 'kilo-cli' && result.target !== 'opencode-cli' && result.target !== 'codex-cli') {
+    throw new Error(`Unsupported account sync target: ${result.target || 'unknown'}`)
+  }
+
+  return result as AccountSyncResult
 }
 
 export const accountsApi = {

@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"strings"
 
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/contract/rules"
-	"cliro-go/internal/logger"
-	"cliro-go/internal/platform"
-	"cliro-go/internal/provider"
-	"cliro-go/internal/route"
-	"cliro-go/internal/util"
+	contract "cliro/internal/contract"
+	"cliro/internal/contract/rules"
+	"cliro/internal/logger"
+	"cliro/internal/platform"
+	"cliro/internal/provider"
+	"cliro/internal/route"
+	"cliro/internal/util"
 )
 
 func (s *Server) prepareExecutionRequest(request contract.Request) (contract.Request, route.ModelResolution, int, string, error) {

@@ -1,6 +1,6 @@
 package anthropic
 
-import contract "cliro-go/internal/contract"
+import contract "cliro/internal/contract"
 
 type StreamEvent struct {
 	Type  string `json:"type"`

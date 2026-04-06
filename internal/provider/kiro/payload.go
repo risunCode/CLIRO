@@ -4,17 +4,23 @@ import (
 	"fmt"
 	"strings"
 
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	provider "cliro-go/internal/provider"
-	thinkingctrl "cliro-go/internal/provider/thinking"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	provider "cliro/internal/provider"
+	thinkingctrl "cliro/internal/provider/thinking"
 
 	"github.com/google/uuid"
 )
 
 var errMessagesEmpty = fmt.Errorf("messages are empty")
 
-const forcedThinkingModeTag = "<thinking_mode>enabled</thinking_mode>"
+const (
+	forcedThinkingModeTag         = "<thinking_mode>enabled</thinking_mode>"
+	adaptiveThinkingModeTag     = "<thinking_mode>adaptive</thinking_mode>"
+	thinkingEffortLowTag      = "<thinking_effort>low</thinking_effort>"
+	thinkingEffortMediumTag       = "<thinking_effort>medium</thinking_effort>"
+	thinkingEffortHighTag         = "<thinking_effort>high</thinking_effort>"
+)
 
 type requestPayload struct {
 	ConversationState conversationState `json:"conversationState"`
@@ -95,12 +101,20 @@ type toolUsePayload struct {
 }
 
 func buildRequestPayload(req provider.ChatRequest, account config.Account, thinkingSettings config.ThinkingSettings) (requestPayload, error) {
+	payload, _, err := buildRequestPayloadWithToolNames(req, account, thinkingSettings)
+	return payload, err
+}
+
+func buildRequestPayloadWithToolNames(req provider.ChatRequest, account config.Account, thinkingSettings config.ThinkingSettings) (requestPayload, provider.ToolNameMapping, error) {
+	req.Tools = provider.NormalizeToolsForProvider("kiro", req.Tools)
+	mapping := provider.BuildToolNameMapping(req.Tools, req.Messages, provider.DefaultToolNameLimit)
+	req = provider.RemapChatRequestToolNames(req, mapping)
 	messages, systemPrompt, err := normalizeRequest(req)
 	if err != nil {
-		return requestPayload{}, err
+		return requestPayload{}, mapping, err
 	}
 	if len(messages) == 0 {
-		return requestPayload{}, errMessagesEmpty
+		return requestPayload{}, mapping, errMessagesEmpty
 	}
 
 	historyMessages := append([]normalizedMessage(nil), messages...)
@@ -151,7 +165,7 @@ func buildRequestPayload(req provider.ChatRequest, account config.Account, think
 		payload.ThinkingBudget = &thinkingBudget
 	}
 
-	return payload, nil
+	return payload, mapping, nil
 }
 
 func buildHistory(model string, messages []normalizedMessage) []historyMessage {
@@ -311,26 +325,10 @@ func filterToolResultsByKnownIDs(results []toolResult, validIDs map[string]struc
 }
 
 func buildToolSpecifications(tools []provider.Tool) []toolSpecification {
-	// Built-in tools that Kiro doesn't support
-	builtinTools := map[string]bool{
-		"web_search":     true,
-		"code_execution": true,
-		"text_editor":    true,
-		"computer":       true,
-	}
-
 	result := make([]toolSpecification, 0, len(tools))
-	for _, tool := range tools {
+	for _, tool := range provider.NormalizeToolsForProvider("kiro", tools) {
 		name := strings.TrimSpace(tool.Function.Name)
 		if name == "" {
-			continue
-		}
-		// Skip built-in tools (those with non-"function" type or in builtin list)
-		toolType := strings.TrimSpace(tool.Type)
-		if toolType != "" && toolType != "function" {
-			continue
-		}
-		if builtinTools[name] {
 			continue
 		}
 		result = append(result, toolSpecification{
@@ -345,24 +343,7 @@ func buildToolSpecifications(tools []provider.Tool) []toolSpecification {
 }
 
 func normalizeToolSchema(schema any) any {
-	mapSchema, ok := schema.(map[string]any)
-	if !ok || mapSchema == nil {
-		return map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}
-	}
-	cloned := make(map[string]any, len(mapSchema)+1)
-	for key, value := range mapSchema {
-		cloned[key] = value
-	}
-	if _, ok := cloned["type"]; !ok {
-		cloned["type"] = "object"
-	}
-	if _, ok := cloned["properties"]; !ok {
-		cloned["properties"] = map[string]any{}
-	}
-	if _, ok := cloned["required"]; !ok {
-		cloned["required"] = []any{}
-	}
-	return cloned
+	return provider.NormalizeToolSchema(schema)
 }
 
 func injectSystemPrompt(systemPrompt string, history *[]normalizedMessage, current *normalizedMessage) {
@@ -438,6 +419,23 @@ func injectForcedThinkingFallback(req provider.ChatRequest, settings config.Thin
 	if current == nil || !shouldInjectForcedThinking(req, settings) {
 		return
 	}
+
+	// Check if adaptive mode is requested
+	if req.Thinking.Requested && len(req.Thinking.RawParams) > 0 {
+		if thinkingType, ok := req.Thinking.RawParams["type"].(string); ok {
+			if strings.ToLower(strings.TrimSpace(thinkingType)) == "adaptive" {
+				// Use adaptive mode with effort level
+				effort := "high"
+				if effortVal, ok := req.Thinking.RawParams["effort"].(string); ok {
+					effort = effortVal
+				}
+				current.Content = joinNonEmpty(buildAdaptiveThinkingPrompt(effort), current.Content)
+				return
+			}
+		}
+	}
+
+	// Default to enabled mode with budget tokens
 	current.Content = joinNonEmpty(buildForcedThinkingPrompt(settings.MaxForcedThinkingTokens), current.Content)
 }
 
@@ -468,6 +466,21 @@ func buildForcedThinkingPrompt(maxTokens int) string {
 		maxTokens = 4000
 	}
 	return forcedThinkingModeTag + "\n<max_thinking_length>" + fmt.Sprintf("%d", maxTokens) + "</max_thinking_length>"
+}
+
+func buildAdaptiveThinkingPrompt(effort string) string {
+	effortTag := thinkingEffortHighTag
+	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "low":
+		effortTag = thinkingEffortLowTag
+	case "medium":
+		effortTag = thinkingEffortMediumTag
+	case "high":
+		effortTag = thinkingEffortHighTag
+	default:
+		effortTag = thinkingEffortHighTag
+	}
+	return adaptiveThinkingModeTag + "\n" + effortTag
 }
 
 func extractThinkingBudget(req provider.ChatRequest) int {

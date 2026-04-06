@@ -21,7 +21,7 @@ func createBackupIfNeeded(file FileInfo) error {
 	if _, err := os.Stat(file.Path); os.IsNotExist(err) {
 		return nil
 	}
-	backupPath := file.Path + ".cliro-go.bak"
+	backupPath := file.Path + ".cliro.bak"
 	if _, err := os.Stat(backupPath); err == nil {
 		return nil
 	}
@@ -49,7 +49,6 @@ func writeFileAtomic(path string, data []byte) error {
 func sameURL(left string, right string) bool {
 	return strings.TrimRight(strings.TrimSpace(left), "/") == strings.TrimRight(strings.TrimSpace(right), "/")
 }
-
 
 func escapeTOMLString(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
@@ -129,7 +128,6 @@ func patchOpenCodeFile(content string, baseURL string, apiKey string, model stri
 		provider["models"].(map[string]any)[model] = buildOpenCodeModelConfig(model)
 	}
 	providers["CLIRO"] = provider
-	delete(providers, "cliro-go")
 	delete(providers, "cliro")
 	jsonDoc["provider"] = providers
 	if model != "" {
@@ -285,7 +283,7 @@ func findOpenCodeProvider(jsonDoc map[string]any) (map[string]any, bool) {
 	if !ok {
 		return nil, false
 	}
-	for _, key := range []string{"CLIRO", "cliro-go", "cliro"} {
+	for _, key := range []string{"CLIRO"} {
 		if provider, ok := mapFromAny(providers[key]); ok {
 			return provider, true
 		}

@@ -1,7 +1,7 @@
 package thinking
 
 import (
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 	"testing"
 )
 

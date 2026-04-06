@@ -8,7 +8,8 @@ import (
 	"io"
 	"testing"
 
-	provider "cliro-go/internal/provider"
+	contract "cliro/internal/contract"
+	provider "cliro/internal/provider"
 )
 
 func TestStreamParser_ParsesAWSFramesAndToolUses(t *testing.T) {
@@ -106,6 +107,29 @@ func TestCollectCompletion_EstimatesUsageWhenStreamOmitsIt(t *testing.T) {
 	}
 	if outcome.Text != "hello world" {
 		t.Fatalf("unexpected text: %q", outcome.Text)
+	}
+}
+
+func TestCollectCompletion_ParsesFallbackThinkingTagsSafely(t *testing.T) {
+	body := bytes.NewReader(bytes.Join([][]byte{
+		awsEventFrame(t, "assistantResponseEvent", map[string]any{"content": "<thinking>plan mentions \"</thinking>\" safely</thinking>\n\nVisible answer"}),
+	}, nil))
+
+	outcome, err := collectCompletionWithTags(body, provider.ChatRequest{
+		Model:    "claude-sonnet-4.5",
+		Thinking: contract.ThinkingConfig{Requested: true},
+	}, []string{"<thinking>", "<think>"})
+	if err != nil {
+		t.Fatalf("collectCompletionWithTags: %v", err)
+	}
+	if outcome.Thinking != `plan mentions "</thinking>" safely` {
+		t.Fatalf("thinking = %q", outcome.Thinking)
+	}
+	if outcome.Text != "Visible answer" {
+		t.Fatalf("text = %q", outcome.Text)
+	}
+	if outcome.ThinkingSignature == "" {
+		t.Fatalf("expected parsed thinking signature")
 	}
 }
 

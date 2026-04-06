@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"cliro-go/internal/account"
-	"cliro-go/internal/config"
-	"cliro-go/internal/tray"
+	"cliro/internal/account"
+	"cliro/internal/config"
+	"cliro/internal/tray"
 	"github.com/wailsapp/wails/v2/pkg/options"
 )
 

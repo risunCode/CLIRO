@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
 const (
@@ -467,7 +467,7 @@ func createCodexAuthBackup(targetPath string) (string, bool, error) {
 		return "", false, fmt.Errorf("read target file: %w", err)
 	}
 
-	backupPath := targetPath + ".bak.cliro-go"
+	backupPath := targetPath + ".bak.cliro"
 	if err := writeRestrictedFile(backupPath, data, 0o600); err != nil {
 		return "", false, fmt.Errorf("write backup file: %w", err)
 	}

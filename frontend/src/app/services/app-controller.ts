@@ -34,8 +34,6 @@ const SYSTEM_LOG_LIMIT = 500
 const PROXY_HEARTBEAT_INTERVAL_MS = 5000
 const ACTIVE_TAB_REFRESH_INTERVAL_MS = 5000
 const AUTO_START_PROXY_RETRY_DELAYS_MS = [1500, 4000]
-const CLOSE_ARMED_TIMEOUT_MS = 5000
-
 interface ProxyRefreshOptions {
   loading?: boolean
 }
@@ -91,8 +89,6 @@ export interface AppShellState {
 
 export interface AppOverlayState {
   showClosePrompt: boolean
-  closePromptArmed: boolean
-  closePromptCountdown: number
   showUpdatePrompt: boolean
   showConfigurationErrorModal: boolean
   startupWarnings: StartupWarningEntry[]
@@ -196,8 +192,6 @@ const initialShellState: AppShellState = {
 
 const initialOverlayState: AppOverlayState = {
   showClosePrompt: false,
-  closePromptArmed: false,
-  closePromptCountdown: 0,
   showUpdatePrompt: false,
   showConfigurationErrorModal: false,
   startupWarnings: [],
@@ -216,9 +210,6 @@ export function createAppController(): AppController {
   let proxyHeartbeatTimer: number | null = null
   let activeTabRefreshTimer: number | null = null
   let proxyAutostartRetryTimers: number[] = []
-  let closePromptDeadlineAt = 0
-  let closePromptTimeoutTimer: number | null = null
-  let closePromptCountdownTimer: number | null = null
   const inFlightRefreshes = new Map<string, Promise<void>>()
 
   const patchShell = (patch: Partial<AppShellState>): void => {
@@ -293,61 +284,10 @@ export function createAppController(): AppController {
     clearActiveTabRefreshTimer()
   }
 
-  const clearClosePromptTimers = (): void => {
-    if (closePromptTimeoutTimer !== null) {
-      clearTimeout(closePromptTimeoutTimer)
-      closePromptTimeoutTimer = null
-    }
-    if (closePromptCountdownTimer !== null) {
-      clearInterval(closePromptCountdownTimer)
-      closePromptCountdownTimer = null
-    }
-  }
-
-  const updateClosePromptCountdown = (): void => {
-    if (closePromptDeadlineAt <= 0) {
-      patchOverlays({ closePromptCountdown: 0 })
-      return
-    }
-
-    const remainingMs = Math.max(0, closePromptDeadlineAt - Date.now())
-    const remainingSeconds = Math.ceil(remainingMs / 1000)
-    patchOverlays({ closePromptCountdown: remainingSeconds })
-
-    if (remainingMs <= 0) {
-      clearClosePromptTimers()
-    }
-  }
-
   const resetClosePromptFlow = ({ hidePrompt }: { hidePrompt: boolean } = { hidePrompt: false }): void => {
-    closePromptDeadlineAt = 0
-    clearClosePromptTimers()
     patchOverlays({
-      ...(hidePrompt ? { showClosePrompt: false } : {}),
-      closePromptArmed: false,
-      closePromptCountdown: 0
+      ...(hidePrompt ? { showClosePrompt: false } : {})
     })
-  }
-
-  const armClosePromptFlow = (): void => {
-    clearClosePromptTimers()
-
-    closePromptDeadlineAt = Date.now() + CLOSE_ARMED_TIMEOUT_MS
-    patchOverlays({
-      showClosePrompt: true,
-      closePromptArmed: true
-    })
-    updateClosePromptCountdown()
-
-    if (typeof window !== 'undefined') {
-      closePromptTimeoutTimer = window.setTimeout(() => {
-        void handleConfirmQuit()
-      }, CLOSE_ARMED_TIMEOUT_MS)
-
-      closePromptCountdownTimer = window.setInterval(() => {
-        updateClosePromptCountdown()
-      }, 250)
-    }
   }
 
   const markAccountBusy = (accountId: string, busy: boolean): void => {
@@ -740,20 +680,13 @@ export function createAppController(): AppController {
     const message =
       typeof record.message === 'string' && record.message.trim().length > 0
         ? record.message.trim()
-        : 'CLIro-Go was already running. Restored the existing window.'
+        : 'CLIRO was already running. Restored the existing window.'
     toastStore.push('info', 'App Reopened', message)
   }
 
   const handleCloseRequested = (): void => {
-    const currentOverlays = get(overlays)
-
-    if (currentOverlays.closePromptArmed) {
+    if (get(overlays).showClosePrompt) {
       void handleConfirmQuit()
-      return
-    }
-
-    if (currentOverlays.showClosePrompt) {
-      armClosePromptFlow()
       return
     }
 
@@ -1004,8 +937,8 @@ export function createAppController(): AppController {
     }
   })
 
-	const kiroAuthController = createAuthSessionController({
-		getSession: (sessionId) => accountsAuthApi.getAuthSession('kiro', sessionId) as Promise<KiroAuthSession>,
+  const kiroAuthController = createAuthSessionController({
+    getSession: (sessionId) => accountsAuthApi.getAuthSession('kiro', sessionId),
     onSession: (session) => {
       patchShell({ kiroAuthSession: session })
     },
@@ -1150,14 +1083,14 @@ export function createAppController(): AppController {
   const handleConfirmQuit = async (): Promise<void> => {
     resetClosePromptFlow({ hidePrompt: true })
     await runAppAction({
-      action: () => systemApi.confirmQuit(),
+      action: () => systemApi.runAction('confirm-quit'),
       errorTitle: 'Close App Failed'
     })
   }
 
   const handleHideToTray = async (): Promise<void> => {
     await runAppAction({
-      action: () => systemApi.hideToTray(),
+      action: () => systemApi.runAction('hide-to-tray'),
       onSuccess: () => {
         resetClosePromptFlow({ hidePrompt: true })
       },
@@ -1405,9 +1338,9 @@ export function createAppController(): AppController {
 
   const handleOpenDataDir = async (): Promise<void> => {
     await runAppAction({
-      action: () => systemApi.openDataDir(),
+      action: () => systemApi.runAction('open-data-dir'),
       onSuccess: () => {
-        toastStore.push('info', 'Data Folder', 'Opened local CLIro-Go data folder.')
+        toastStore.push('info', 'Data Folder', 'Opened local CLIRO data folder.')
       },
       errorTitle: 'Open Data Folder Failed'
     })

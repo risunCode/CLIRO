@@ -3,7 +3,7 @@ package account
 import (
 	"testing"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
 func TestPoolSkipsBannedAccounts(t *testing.T) {

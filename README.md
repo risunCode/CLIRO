@@ -1,8 +1,8 @@
-# CLIro-Go
+# CLIRO
 
-CLIro-Go is a Wails desktop control plane for running a local OpenAI-compatible proxy across ChatGPT Codex and Kiro accounts. CLIro stands for CLIrouter.
+CLIRO is a Wails desktop control plane for running a local OpenAI-compatible proxy across ChatGPT Codex and Kiro accounts. CLIRO stands for CLIrouter.
 
-Current release: **v0.3.0**
+Current release: **v0.3.1**
 
 ## Screenshot
 
@@ -56,7 +56,7 @@ Current release: **v0.3.0**
 
 ## Local Data
 
-CLIro-Go stores runtime state in `~/.cliro-go/`:
+CLIRO stores runtime state in `~/.cliro/`:
 
 - `config.json` - proxy, auth, scheduling, Cloudflared, and UI-facing settings
 - `accounts.json` - connected account records with token/quota metadata
@@ -105,7 +105,7 @@ wails build
 
 Windows output:
 
-`build/bin/Cliro-Go.exe`
+`build/bin/CLIRO.exe`
 
 ## Proxy Base URL
 
@@ -146,4 +146,4 @@ The response will include `reasoning_content` field with extended thinking.
 
 ## Release Notes
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the full `v0.3.0` change history.
+See [`CHANGELOG.md`](CHANGELOG.md) for the full `v0.3.1` change history.

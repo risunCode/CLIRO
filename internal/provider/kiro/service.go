@@ -2,7 +2,7 @@ package kiro
 
 import (
 	"bytes"
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"cliro-go/internal/account"
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/logger"
-	"cliro-go/internal/platform"
-	provider "cliro-go/internal/provider"
+	"cliro/internal/account"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	"cliro/internal/logger"
+	"cliro/internal/platform"
+	provider "cliro/internal/provider"
 
 	"github.com/google/uuid"
 )
@@ -55,6 +55,7 @@ var endpointConfigs = []endpointConfig{
 type runtimeClient struct {
 	httpClient        *http.Client
 	firstTokenTimeout time.Duration
+	bridge            provider.StreamBridge
 }
 
 type Service struct {
@@ -64,6 +65,8 @@ type Service struct {
 	log               *logger.Logger
 	httpClient        *http.Client
 	firstTokenTimeout time.Duration
+	retryPlan         provider.RetryPlanner
+	recovery          *provider.AuthRecoveryCoordinator
 }
 
 type accountAuth interface {
@@ -83,6 +86,8 @@ func NewService(store *config.Manager, authManager accountAuth, accountPool *acc
 		log:               log,
 		httpClient:        client,
 		firstTokenTimeout: kiroFirstTokenTimeout,
+		retryPlan:         provider.NewRetryPlanner(accountPool, "kiro", nil),
+		recovery:          provider.NewAuthRecoveryCoordinator(func(accountID string) (config.Account, error) { return authManager.RefreshAccount(accountID) }, 2),
 	}
 }
 
@@ -102,8 +107,7 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 		return provider.CompletionOutcome{}, http.StatusBadRequest, "model is required", fmt.Errorf("model is required")
 	}
 
-	upstreamCandidates := s.pool.AvailableAccountsForProvider("kiro")
-	if len(upstreamCandidates) == 0 {
+	if s.pool.AvailabilitySnapshot("kiro").ReadyCount == 0 {
 		s.recordRequestFailure()
 		reason := s.pool.ProviderUnavailableReason("kiro")
 		s.logProxyEvent("warn", "request.rejected", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("reason", reason))
@@ -114,23 +118,37 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 	thinkingSettings := s.store.Snapshot().Thinking
 	var lastStatus int
 	var lastMessage string
+	excluded := make(map[string]bool)
+	attempt := 0
+	attemptCtx := provider.AttemptContext{RequestID: requestID, Provider: "kiro", Model: req.Model, Stream: req.Stream}
 
-	for _, candidate := range upstreamCandidates {
+	for {
+		candidate, ok := s.retryPlan.NextAccount(excluded)
+		if !ok {
+			break
+		}
+		attempt++
 		accountLabel := config.AccountLabel(candidate)
 		s.logProxyEvent("info", "request.attempt", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("account", accountLabel), logger.String("model", strings.TrimSpace(req.Model)))
 		account, err := s.auth.EnsureFreshAccount(candidate.ID)
 		if err != nil {
 			decision := classifyHTTPFailure(http.StatusUnauthorized, []byte(err.Error()))
+			result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: err, Failure: decision, RetryCause: "ensure_fresh_account", Final: true}
+			retryDecision := s.retryPlan.Decide(result)
+			result.RetryCause = retryDecision.Cause
+			result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+			provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, candidate.ID, accountLabel, result))
 			s.applyFailureDecision(requestID, candidate.ID, accountLabel, decision)
 			lastStatus = decision.Status
 			lastMessage = decision.Message
+			excluded[candidate.ID] = true
 			continue
 		}
 		accountLabel = config.AccountLabel(account)
-		refreshedAfterFailure := false
+		recoveredAuth := false
 
 		for {
-			payload, err := buildRequestPayload(req, account, thinkingSettings)
+			payload, toolNames, err := buildRequestPayloadWithToolNames(req, account, thinkingSettings)
 			if err != nil {
 				s.recordRequestFailure()
 				return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
@@ -141,12 +159,22 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 				return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
 			}
 
+			openStarted := time.Now()
 			resp, _, err := runtimeClient.Do(ctx, account, body)
+			openDuration := time.Since(openStarted)
 			if err != nil {
 				decision := classifyTransportFailure(err)
+				result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: err, Failure: decision, UpstreamOpen: openDuration, RetryCause: "transport_error", EmptyStream: decision.Class == provider.FailureEmptyStream}
+				retryDecision := s.retryPlan.Decide(result)
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
 				lastStatus = decision.Status
 				lastMessage = decision.Message
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
 				break
 			}
 
@@ -154,18 +182,25 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 				data, _ := io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				decision := classifyHTTPFailure(resp.StatusCode, data)
-				if decision.Class == provider.FailureAuthRefreshable && !refreshedAfterFailure {
-					refreshedAccount, refreshErr := s.auth.RefreshAccount(account.ID)
+				result := provider.AttemptResult{Attempt: attempt, Status: resp.StatusCode, Message: decision.Message, Failure: decision, UpstreamOpen: openDuration, RecoveredAuth: recoveredAuth, RetryCause: "upstream_http_error"}
+				retryDecision := s.retryPlan.Decide(result)
+				if retryDecision.RefreshAuth {
+					refreshedAccount, recoveryStatus, refreshErr := s.recovery.Recover(ctx, "kiro", account.ID)
 					if refreshErr == nil {
 						account = refreshedAccount
 						accountLabel = config.AccountLabel(account)
-						refreshedAfterFailure = true
-						s.logAuthEvent("info", "auth.token_refreshed_retry", requestID, logger.String("account", accountLabel))
+						recoveredAuth = true
+						s.logAuthEvent("info", "auth.token_refreshed_retry", requestID, logger.String("account", accountLabel), logger.String("recovery_status", string(recoveryStatus)))
 						continue
 					}
 					decision = classifyHTTPFailure(http.StatusUnauthorized, []byte(refreshErr.Error()))
+					result = provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: refreshErr, Failure: decision, UpstreamOpen: openDuration, RecoveredAuth: true, RetryCause: "auth_refresh_rejected"}
+					retryDecision = s.retryPlan.Decide(result)
 				}
 
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
 				lastStatus = decision.Status
 				lastMessage = decision.Message
@@ -173,16 +208,61 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 					s.recordRequestFailure()
 					return provider.CompletionOutcome{}, decision.Status, decision.Message, fmt.Errorf(decision.Message)
 				}
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
 				break
 			}
 
-			outcome, err := collectCompletionWithTagsAndCallback(resp.Body, req, thinkingSettings.FallbackTags, eventCallback)
+			callbackVisible := false
+			var firstVisibleAt time.Time
+			wrappedCallback := func(event StreamEvent) {
+				if event.Text != "" || event.Thinking != "" {
+					callbackVisible = true
+					if firstVisibleAt.IsZero() {
+						firstVisibleAt = time.Now()
+					}
+				}
+				if eventCallback != nil {
+					eventCallback(event)
+				}
+			}
+			outcome, err := collectCompletionWithTagsAndMapping(resp.Body, req, thinkingSettings.FallbackTags, toolNames, wrappedCallback)
 			_ = resp.Body.Close()
 			if err != nil {
 				decision := classifyTransportFailure(err)
+				result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Err: err, Failure: decision, UpstreamOpen: openDuration, UpstreamReadable: true, EmptyStream: decision.Class == provider.FailureEmptyStream, ClientBytesSent: callbackVisible, RetryCause: "stream_parse_error"}
+				if !firstVisibleAt.IsZero() {
+					result.FirstClientChunk = firstVisibleAt.Sub(openStarted)
+				}
+				retryDecision := s.retryPlan.Decide(result)
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
 				lastStatus = decision.Status
 				lastMessage = decision.Message
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
+				break
+			}
+			if !provider.CompletionHasVisibleOutput(outcome) {
+				decision := provider.FailureDecision{Class: provider.FailureEmptyStream, Message: "empty stream", RetryAllowed: true, Status: http.StatusBadGateway}
+				result := provider.AttemptResult{Attempt: attempt, Status: decision.Status, Message: decision.Message, Failure: decision, UpstreamOpen: openDuration, UpstreamReadable: true, EmptyStream: true, ClientBytesSent: callbackVisible, RetryCause: "empty_stream"}
+				if !firstVisibleAt.IsZero() {
+					result.FirstClientChunk = firstVisibleAt.Sub(openStarted)
+				}
+				retryDecision := s.retryPlan.Decide(result)
+				result.RetryCause = retryDecision.Cause
+				result.Final = !retryDecision.Retry && !retryDecision.RefreshAuth
+				provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
+				s.applyFailureDecision(requestID, account.ID, accountLabel, decision)
+				lastStatus = decision.Status
+				lastMessage = decision.Message
+				if retryDecision.ExcludeAccount {
+					excluded[account.ID] = true
+				}
 				break
 			}
 			outcome.Provider = "kiro"
@@ -190,6 +270,11 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 			outcome.AccountLabel = accountLabel
 
 			s.markSuccess(requestID, account.ID, accountLabel, outcome.Usage)
+			result := provider.AttemptResult{Attempt: attempt, Success: true, Final: true, UpstreamOpen: openDuration, UpstreamReadable: true, ClientBytesSent: callbackVisible}
+			if !firstVisibleAt.IsZero() {
+				result.FirstClientChunk = firstVisibleAt.Sub(openStarted)
+			}
+			provider.LogAttemptDiagnostic(s.log, provider.NewAttemptDiagnostic(attemptCtx, account.ID, accountLabel, result))
 			return outcome, 0, "", nil
 		}
 	}
@@ -391,7 +476,7 @@ func newRuntimeClient(httpClient *http.Client, firstTokenTimeout time.Duration) 
 	if firstTokenTimeout <= 0 {
 		firstTokenTimeout = kiroFirstTokenTimeout
 	}
-	return &runtimeClient{httpClient: client, firstTokenTimeout: firstTokenTimeout}
+	return &runtimeClient{httpClient: client, firstTokenTimeout: firstTokenTimeout, bridge: provider.StreamBridge{ProbeSize: 4096}}
 }
 
 func (c *runtimeClient) Do(ctx context.Context, account config.Account, body []byte) (*http.Response, endpointConfig, error) {
@@ -452,7 +537,7 @@ func (c *runtimeClient) doOnceWithTimeout(ctx context.Context, account config.Ac
 		return resp, nil
 	}
 
-	wrappedBody, err := waitForFirstToken(resp.Body, timeout)
+	wrappedBody, err := waitForFirstToken(resp.Body, timeout, c.bridge)
 	if err != nil {
 		_ = resp.Body.Close()
 		return nil, err
@@ -461,42 +546,21 @@ func (c *runtimeClient) doOnceWithTimeout(ctx context.Context, account config.Ac
 	return resp, nil
 }
 
-func waitForFirstToken(body io.ReadCloser, timeout time.Duration) (io.ReadCloser, error) {
+func waitForFirstToken(body io.ReadCloser, timeout time.Duration, bridge provider.StreamBridge) (io.ReadCloser, error) {
 	if timeout <= 0 {
 		return body, nil
 	}
-
-	type readResult struct {
-		data []byte
-		err  error
-	}
-
-	buf := make([]byte, 4096)
-	resultCh := make(chan readResult, 1)
-	go func() {
-		n, err := body.Read(buf)
-		resultCh <- readResult{data: append([]byte(nil), buf[:n]...), err: err}
-	}()
-
-	select {
-	case result := <-resultCh:
-		if len(result.data) > 0 {
-			reader := io.MultiReader(bytes.NewReader(result.data), body)
-			return readCloser{Reader: reader, Closer: body}, nil
-		}
-		if result.err == nil {
-			return body, nil
-		}
-		return nil, result.err
-	case <-time.After(timeout):
-		_ = body.Close()
+	probe, err := bridge.OpenVerified(body, timeout)
+	if errors.Is(err, provider.ErrStreamProbeTimeout) {
 		return nil, ErrFirstTokenTimeout
 	}
-}
-
-type readCloser struct {
-	io.Reader
-	io.Closer
+	if errors.Is(err, provider.ErrEmptyStream) {
+		return nil, provider.ErrEmptyStream
+	}
+	if err != nil {
+		return nil, err
+	}
+	return probe.Reader, nil
 }
 
 func applyRuntimeHeaders(req *http.Request, account config.Account, endpoint endpointConfig, attempt int) {
@@ -558,6 +622,9 @@ func classifyHTTPFailure(statusCode int, body []byte) provider.FailureDecision {
 func classifyTransportFailure(err error) provider.FailureDecision {
 	if errors.Is(err, ErrFirstTokenTimeout) {
 		return provider.FailureDecision{Class: provider.FailureRetryableTransport, Message: ErrFirstTokenTimeout.Error(), Cooldown: 5 * time.Second, RetryAllowed: true, Status: http.StatusGatewayTimeout}
+	}
+	if errors.Is(err, provider.ErrEmptyStream) {
+		return provider.FailureDecision{Class: provider.FailureEmptyStream, Message: provider.ErrEmptyStream.Error(), Cooldown: 5 * time.Second, RetryAllowed: true, Status: http.StatusBadGateway}
 	}
 	decision := provider.ClassifyTransportFailure(err)
 	if err != nil {

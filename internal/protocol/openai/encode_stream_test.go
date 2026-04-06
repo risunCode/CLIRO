@@ -3,7 +3,7 @@ package openai
 import (
 	"testing"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 func TestIRToChat_UsesReasoningContentField(t *testing.T) {
@@ -79,5 +79,28 @@ func TestIRStreamToChunk_UsesContentFieldForText(t *testing.T) {
 	}
 	if _, exists := chunk.Choices[0].Delta["reasoning_content"]; exists {
 		t.Fatalf("unexpected reasoning_content field: %#v", chunk.Choices[0].Delta)
+	}
+}
+
+func TestIRToResponses_IncludesMessageItemWhenThinkingAndToolCallsPresent(t *testing.T) {
+	response := IRToResponses(contract.Response{
+		ID:       "resp_789",
+		Model:    "gpt-5.4",
+		Thinking: "plan first",
+		ToolCalls: []contract.ToolCall{{
+			ID:        "call_1",
+			Name:      "Read",
+			Arguments: `{"path":"README.md"}`,
+		}},
+	})
+
+	if len(response.Output) != 2 {
+		t.Fatalf("output count = %d output=%#v", len(response.Output), response.Output)
+	}
+	if response.Output[0].Type != "message" {
+		t.Fatalf("first output type = %q", response.Output[0].Type)
+	}
+	if response.Output[0].Content[0].ReasoningContent != "plan first" {
+		t.Fatalf("reasoning_content = %q", response.Output[0].Content[0].ReasoningContent)
 	}
 }

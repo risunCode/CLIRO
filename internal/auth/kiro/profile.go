@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"cliro-go/internal/provider"
+	"cliro/internal/provider"
 )
 
 const quotaBaseURL = "https://codewhisperer.us-east-1.amazonaws.com"

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/util"
+	contract "cliro/internal/contract"
+	"cliro/internal/util"
 
 	"github.com/google/uuid"
 )
@@ -35,6 +35,7 @@ func ResponsesToIR(req ResponsesRequest) (contract.Request, error) {
 	if len(messages) == 0 {
 		messages = []contract.Message{{Role: contract.RoleUser, Content: req.Input}}
 	}
+	messages = sanitizeToolHistory(messages)
 
 	tools := make([]contract.Tool, 0, len(req.Tools))
 	for _, tool := range req.Tools {
@@ -76,8 +77,12 @@ func ChatToIR(req ChatRequest) (contract.Request, error) {
 	for _, msg := range req.Messages {
 		toolCalls := make([]contract.ToolCall, 0, len(msg.ToolCalls))
 		for _, toolCall := range msg.ToolCalls {
+			id := strings.TrimSpace(toolCall.ID)
+			if id == "" {
+				id = "toolu_" + uuid.NewString()[:8]
+			}
 			toolCalls = append(toolCalls, contract.ToolCall{
-				ID:        toolCall.ID,
+				ID:        id,
 				Name:      toolCall.Function.Name,
 				Arguments: toolCall.Function.Arguments,
 			})
@@ -91,6 +96,7 @@ func ChatToIR(req ChatRequest) (contract.Request, error) {
 			ThinkingBlocks: thinkingBlocksFromAdditionalKwargs(msg.AdditionalKwargs),
 		})
 	}
+	messages = sanitizeToolHistory(messages)
 
 	tools := make([]contract.Tool, 0, len(req.Tools))
 	for _, tool := range req.Tools {
@@ -390,6 +396,111 @@ func validateModel(model string) error {
 		return fmt.Errorf("model is required")
 	}
 	return nil
+}
+
+func sanitizeToolHistory(messages []contract.Message) []contract.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	declared := make(map[string]struct{})
+	seenResults := make(map[string]struct{})
+	sanitized := make([]contract.Message, 0, len(messages))
+	for _, message := range messages {
+		current := message
+		if current.Role == contract.RoleAssistant && len(current.ToolCalls) > 0 {
+			filteredCalls := make([]contract.ToolCall, 0, len(current.ToolCalls))
+			seenCalls := make(map[string]struct{}, len(current.ToolCalls))
+			for _, call := range current.ToolCalls {
+				name := strings.TrimSpace(call.Name)
+				if name == "" {
+					continue
+				}
+				id := strings.TrimSpace(call.ID)
+				if id == "" {
+					id = "toolu_" + uuid.NewString()[:8]
+				}
+				if _, ok := seenCalls[id]; ok {
+					continue
+				}
+				seenCalls[id] = struct{}{}
+				declared[id] = struct{}{}
+				call.ID = id
+				call.Name = name
+				if strings.TrimSpace(call.Arguments) == "" {
+					call.Arguments = "{}"
+				}
+				filteredCalls = append(filteredCalls, call)
+			}
+			current.ToolCalls = filteredCalls
+			if len(current.ToolCalls) == 0 && strings.TrimSpace(openAIContentToText(current.Content)) == "" {
+				continue
+			}
+			sanitized = append(sanitized, current)
+			continue
+		}
+
+		if current.Role == contract.RoleTool {
+			id := strings.TrimSpace(current.ToolCallID)
+			if id == "" {
+				current.Role = contract.RoleUser
+				current.ToolCallID = ""
+				if strings.TrimSpace(openAIContentToText(current.Content)) == "" {
+					continue
+				}
+				sanitized = append(sanitized, current)
+				continue
+			}
+			if _, ok := declared[id]; !ok {
+				current.Role = contract.RoleUser
+				current.ToolCallID = ""
+				if strings.TrimSpace(openAIContentToText(current.Content)) == "" {
+					continue
+				}
+				sanitized = append(sanitized, current)
+				continue
+			}
+			if _, ok := seenResults[id]; ok {
+				continue
+			}
+			seenResults[id] = struct{}{}
+		}
+
+		sanitized = append(sanitized, current)
+	}
+	return sanitized
+}
+
+func openAIContentToText(content any) string {
+	switch typed := content.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text := strings.TrimSpace(openAIContentToText(item))
+			if text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n"))
+	case map[string]any:
+		for _, key := range []string{"text", "output", "content", "refusal"} {
+			if value, ok := typed[key]; ok {
+				text := strings.TrimSpace(openAIContentToText(value))
+				if text != "" {
+					return text
+				}
+			}
+		}
+		encoded, _ := json.Marshal(typed)
+		return strings.TrimSpace(string(encoded))
+	default:
+		encoded, _ := json.Marshal(typed)
+		return strings.TrimSpace(string(encoded))
+	}
 }
 
 func parseThinkingConfig(reasoning map[string]any) contract.ThinkingConfig {

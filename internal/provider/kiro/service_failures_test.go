@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	provider "cliro-go/internal/provider"
+	provider "cliro/internal/provider"
 )
 
 func TestClassifyHTTPFailure_ImproperlyFormedRequestIsRequestShape(t *testing.T) {

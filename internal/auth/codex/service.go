@@ -1,10 +1,8 @@
 package codex
 
 import (
-	provider "cliro-go/internal/provider"
+	provider "cliro/internal/provider"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"cliro-go/internal/config"
-	"cliro-go/internal/logger"
+	"cliro/internal/config"
+	"cliro/internal/logger"
 
 	"github.com/google/uuid"
 )
@@ -329,15 +327,6 @@ func (s *Service) refreshTokens(ctx context.Context, refreshToken string) (*Toke
 		return nil, err
 	}
 	return &parsed, nil
-}
-
-func AccountFingerprint(account config.Account) string {
-	base := strings.TrimSpace(account.AccountID)
-	if base == "" {
-		base = strings.TrimSpace(account.Email)
-	}
-	sum := sha256.Sum256([]byte(base))
-	return base64.RawURLEncoding.EncodeToString(sum[:6])
 }
 
 func tokenExpired(account config.Account, now time.Time) bool {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/protocol/openai"
-	"cliro-go/internal/util"
+	contract "cliro/internal/contract"
+	"cliro/internal/protocol/openai"
+	"cliro/internal/util"
 )
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +88,7 @@ func (s *Server) streamOpenAIChat(w http.ResponseWriter, requestedModel string, 
 
 	chatID := util.FirstNonEmpty(strings.TrimSpace(response.ID), "chatcmpl-"+newSSEID())
 	model := util.FirstNonEmpty(strings.TrimSpace(requestedModel), strings.TrimSpace(response.Model))
+	state := &openai.StreamState{}
 
 	initialChunk := openai.ChatStreamChunk{
 		ID:      chatID,
@@ -103,10 +104,14 @@ func (s *Server) streamOpenAIChat(w http.ResponseWriter, requestedModel string, 
 	if err := writeOpenAISSEChunk(w, initialChunk); err != nil {
 		return
 	}
+	state.Started = true
 	flusher.Flush()
 
 	for _, chunk := range chunkText(response.Thinking, 160) {
 		event := contract.Event{ThinkDelta: chunk}
+		if !state.Apply(event) {
+			continue
+		}
 		if err := writeOpenAISSEChunk(w, openai.IRStreamToChunk(chatID, model, event)); err != nil {
 			return
 		}
@@ -115,6 +120,9 @@ func (s *Server) streamOpenAIChat(w http.ResponseWriter, requestedModel string, 
 
 	for _, chunk := range chunkText(response.Text, 160) {
 		event := contract.Event{TextDelta: chunk}
+		if !state.Apply(event) {
+			continue
+		}
 		if err := writeOpenAISSEChunk(w, openai.IRStreamToChunk(chatID, model, event)); err != nil {
 			return
 		}
@@ -128,6 +136,9 @@ func (s *Server) streamOpenAIChat(w http.ResponseWriter, requestedModel string, 
 			"type":     "function",
 			"function": toolCall.Function,
 		}}}
+		if !state.Apply(event) {
+			continue
+		}
 		if err := writeOpenAISSEChunk(w, openai.IRStreamToChunk(chatID, model, event)); err != nil {
 			return
 		}
@@ -135,7 +146,11 @@ func (s *Server) streamOpenAIChat(w http.ResponseWriter, requestedModel string, 
 	}
 
 	finishReason := util.FirstNonEmpty(strings.TrimSpace(response.StopReason), "stop")
-	if err := writeOpenAISSEChunk(w, openai.IRStreamToChunk(chatID, model, contract.Event{Done: true, Type: finishReason})); err != nil {
+	finalEvent := contract.Event{Done: true, Type: finishReason}
+	if !state.Apply(finalEvent) {
+		return
+	}
+	if err := writeOpenAISSEChunk(w, openai.IRStreamToChunk(chatID, model, finalEvent)); err != nil {
 		return
 	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
@@ -283,94 +298,28 @@ func (s *Server) streamOpenAIResponses(w http.ResponseWriter, requestedModel str
 	responseID := util.FirstNonEmpty(strings.TrimSpace(response.ID), "resp_"+newSSEID())
 	model := util.FirstNonEmpty(strings.TrimSpace(requestedModel), strings.TrimSpace(response.Model))
 	createdAt := nowUnix()
-	itemID := "msg_" + newSSEID()
-
-	writeOpenAIResponsesSSEEvent(w, "response.created", map[string]any{
-		"type": "response.created",
-		"response": map[string]any{
-			"id":         responseID,
-			"object":     "response",
-			"created_at": createdAt,
-			"status":     "in_progress",
-			"model":      model,
-			"output":     []any{},
-		},
-	})
-	writeOpenAIResponsesSSEEvent(w, "response.in_progress", map[string]any{
-		"type": "response.in_progress",
-		"response": map[string]any{
-			"id":         responseID,
-			"object":     "response",
-			"created_at": createdAt,
-			"status":     "in_progress",
-			"model":      model,
-			"output":     []any{},
-		},
-	})
-	writeOpenAIResponsesSSEEvent(w, "response.output_item.added", map[string]any{
-		"type":         "response.output_item.added",
-		"output_index": 0,
-		"item": map[string]any{
-			"id":      itemID,
-			"type":    "message",
-			"role":    "assistant",
-			"status":  "in_progress",
-			"content": []any{map[string]any{"type": "output_text", "text": "", "annotations": []any{}}},
-		},
-	})
-	flusher.Flush()
-
-	for _, chunk := range chunkText(response.Thinking, 160) {
-		writeOpenAIResponsesSSEEvent(w, "response.output_text.delta", map[string]any{
-			"type":              "response.output_text.delta",
-			"output_index":      0,
-			"content_index":     0,
-			"item_id":           itemID,
-			"reasoning_content": chunk,
-		})
+	state := openai.NewResponsesStreamState(responseID, model, createdAt, func(event string, payload map[string]any) {
+		writeOpenAIResponsesSSEEvent(w, event, payload)
 		flusher.Flush()
+	})
+	state.Start()
+
+	shouldEmitMessage := strings.TrimSpace(response.Text) != "" || strings.TrimSpace(response.Thinking) != "" || len(response.ToolCalls) == 0
+	if shouldEmitMessage {
+		for _, chunk := range chunkText(response.Thinking, 160) {
+			state.EmitReasoningDelta(chunk)
+		}
+		for _, chunk := range chunkText(response.Text, 160) {
+			state.EmitTextDelta(chunk)
+		}
+		state.CloseMessageItem(response.Text, response.Thinking)
 	}
 
-	for _, chunk := range chunkText(response.Text, 160) {
-		writeOpenAIResponsesSSEEvent(w, "response.output_text.delta", map[string]any{
-			"type":          "response.output_text.delta",
-			"output_index":  0,
-			"content_index": 0,
-			"item_id":       itemID,
-			"delta":         chunk,
-		})
-		flusher.Flush()
+	for _, toolCall := range response.ToolCalls {
+		state.EmitFunctionCall(toolCall)
 	}
 
-	writeOpenAIResponsesSSEEvent(w, "response.output_text.done", map[string]any{
-		"type":              "response.output_text.done",
-		"output_index":      0,
-		"content_index":     0,
-		"item_id":           itemID,
-		"text":              response.Text,
-		"reasoning_content": response.Thinking,
-	})
-	writeOpenAIResponsesSSEEvent(w, "response.output_item.done", map[string]any{
-		"type":         "response.output_item.done",
-		"output_index": 0,
-		"item": map[string]any{
-			"id":     itemID,
-			"type":   "message",
-			"role":   "assistant",
-			"status": "completed",
-			"content": []any{map[string]any{
-				"type":              "output_text",
-				"text":              response.Text,
-				"reasoning_content": response.Thinking,
-				"annotations":       []any{},
-			}},
-		},
-	})
-	writeOpenAIResponsesSSEEvent(w, "response.completed", map[string]any{
-		"type":     "response.completed",
-		"response": openai.IRToResponses(response),
-	})
-	flusher.Flush()
+	state.Complete(openai.IRToResponses(response))
 }
 
 func (s *Server) streamOpenAICompletions(w http.ResponseWriter, requestedModel string, response contract.Response) {

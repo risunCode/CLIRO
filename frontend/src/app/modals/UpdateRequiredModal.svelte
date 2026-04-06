@@ -29,7 +29,7 @@
   <svelte:fragment slot="header">
     <ModalWindowHeader
       title="Update Required"
-      description="This CLIro-Go version is no longer supported. Update to the latest release now."
+      description="This CLIRO version is no longer supported. Update to the latest release now."
     />
   </svelte:fragment>
 

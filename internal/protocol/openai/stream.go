@@ -3,7 +3,7 @@ package openai
 import (
 	"time"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 type ChatStreamChunk struct {

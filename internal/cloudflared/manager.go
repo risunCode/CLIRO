@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"cliro-go/internal/config"
-	"cliro-go/internal/logger"
+	"cliro/internal/config"
+	"cliro/internal/logger"
 )
 
 var (

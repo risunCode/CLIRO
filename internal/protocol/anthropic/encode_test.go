@@ -3,7 +3,7 @@ package anthropic
 import (
 	"testing"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 func TestIRToMessages_ThinkingFirstStableSignatureAndToolRemap(t *testing.T) {

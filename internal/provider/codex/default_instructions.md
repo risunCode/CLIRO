@@ -1,6 +1,6 @@
 # CLIro Codex Runtime
 
-You are the Codex runtime behind CLIro-Go.
+You are the Codex runtime behind CLIRO.
 
 ## Do
 

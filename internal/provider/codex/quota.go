@@ -1,7 +1,7 @@
 package codex
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"cliro-go/internal/config"
-	provider "cliro-go/internal/provider"
+	"cliro/internal/config"
+	provider "cliro/internal/provider"
 
 	"github.com/google/uuid"
 )

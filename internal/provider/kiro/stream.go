@@ -1,7 +1,7 @@
 package kiro
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -9,10 +9,10 @@ import (
 	"io"
 	"strings"
 
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	provider "cliro-go/internal/provider"
-	providerthinking "cliro-go/internal/provider/thinking"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	provider "cliro/internal/provider"
+	providerthinking "cliro/internal/provider/thinking"
 
 	"github.com/google/uuid"
 )
@@ -34,24 +34,28 @@ type UsageSnapshot struct {
 }
 
 func collectCompletion(body io.Reader, req provider.ChatRequest) (provider.CompletionOutcome, error) {
-	return collectCompletionWithTags(body, req, nil)
+	return collectCompletionWithTagsAndMapping(body, req, nil, provider.ToolNameMapping{}, nil)
 }
 
 func collectCompletionWithCallback(body io.Reader, req provider.ChatRequest, callback func(StreamEvent)) (provider.CompletionOutcome, error) {
-	return collectCompletionWithTagsAndCallback(body, req, nil, callback)
+	return collectCompletionWithTagsAndMapping(body, req, nil, provider.ToolNameMapping{}, callback)
 }
 
 func collectCompletionWithTags(body io.Reader, req provider.ChatRequest, fallbackTags []string) (provider.CompletionOutcome, error) {
-	return collectCompletionWithTagsAndCallback(body, req, fallbackTags, nil)
+	return collectCompletionWithTagsAndMapping(body, req, fallbackTags, provider.ToolNameMapping{}, nil)
 }
 
 func collectCompletionWithTagsAndCallback(body io.Reader, req provider.ChatRequest, fallbackTags []string, callback func(StreamEvent)) (provider.CompletionOutcome, error) {
+	return collectCompletionWithTagsAndMapping(body, req, fallbackTags, provider.ToolNameMapping{}, callback)
+}
+
+func collectCompletionWithTagsAndMapping(body io.Reader, req provider.ChatRequest, fallbackTags []string, toolNames provider.ToolNameMapping, callback func(StreamEvent)) (provider.CompletionOutcome, error) {
 	outcome := provider.CompletionOutcome{
 		ID:    "chatcmpl-" + uuid.NewString(),
 		Model: req.Model,
 	}
 
-	parser := NewStreamParser(body)
+	parser := NewStreamParserWithFallbackTags(body, fallbackTags, req.Thinking.Requested)
 	var textBuilder strings.Builder
 	var thinkingBuilder strings.Builder
 
@@ -76,10 +80,14 @@ func collectCompletionWithTagsAndCallback(body io.Reader, req provider.ChatReque
 		}
 	}
 
-	toolUses := deduplicateToolUses(parser.ToolUses())
+	toolUses := provider.RestoreToolUseNames(deduplicateToolUses(parser.ToolUses()), toolNames)
 	text := sanitizeModelOutputText(textBuilder.String())
 	nativeThinking := sanitizeModelOutputText(thinkingBuilder.String())
-	parsedThinking, parsedText := parseFallbackThinking(text, req, fallbackTags)
+	parsedThinking := parser.FallbackThinkingCandidate()
+	parsedText := text
+	if strings.TrimSpace(parsedThinking.Thinking) == "" {
+		parsedThinking, parsedText = parseFallbackThinking(text, req, fallbackTags)
+	}
 	selection := providerthinking.Select(providerthinking.Inputs{
 		Request: req.Thinking,
 		Native:  thinkingCandidate(nativeThinking),
@@ -104,6 +112,17 @@ func parseFallbackThinking(text string, req provider.ChatRequest, fallbackTags [
 	text = sanitizeModelOutputText(text)
 	if !req.Thinking.Requested || text == "" {
 		return providerthinking.Candidate{}, text
+	}
+
+	if parser := newAssistantFallbackParser(fallbackTags); parser != nil && parser.Enabled() {
+		visibleEvents := append(parser.Feed(text), parser.Finalize()...)
+		var visibleText strings.Builder
+		for _, event := range visibleEvents {
+			visibleText.WriteString(event.Text)
+		}
+		if candidate := parser.ParsedCandidate(); strings.TrimSpace(candidate.Thinking) != "" {
+			return candidate, sanitizeModelOutputText(visibleText.String())
+		}
 	}
 
 	parser := providerthinking.NewLeadingParser(fallbackTags, 0)
@@ -280,6 +299,9 @@ type StreamParser struct {
 	thinkingContent  string
 	currentTool      *toolAccumulator
 	toolUses         []provider.ToolUse
+	pendingEvents    []StreamEvent
+	finalized        bool
+	fallbackParser   *assistantFallbackParser
 }
 
 type eventFrame struct {
@@ -296,23 +318,53 @@ type toolAccumulator struct {
 }
 
 func NewStreamParser(reader io.Reader) *StreamParser {
-	return &StreamParser{reader: reader}
+	return NewStreamParserWithFallbackTags(reader, nil, false)
+}
+
+func NewStreamParserWithFallbackTags(reader io.Reader, fallbackTags []string, enableFallback bool) *StreamParser {
+	parser := &StreamParser{reader: reader}
+	if enableFallback {
+		parser.fallbackParser = newAssistantFallbackParser(fallbackTags)
+	}
+	return parser
 }
 
 func (p *StreamParser) Next() (StreamEvent, error) {
+	if len(p.pendingEvents) > 0 {
+		event := p.pendingEvents[0]
+		p.pendingEvents = p.pendingEvents[1:]
+		return event, nil
+	}
 	for {
 		frame, err := readEventFrame(p.reader)
 		if err != nil {
 			if err == io.EOF {
-				p.finalizeCurrentTool()
+				if !p.finalized {
+					p.finalized = true
+					p.finalizeCurrentTool()
+					if p.fallbackParser != nil {
+						p.pendingEvents = append(p.pendingEvents, p.fallbackParser.Finalize()...)
+					}
+				}
+				if len(p.pendingEvents) > 0 {
+					event := p.pendingEvents[0]
+					p.pendingEvents = p.pendingEvents[1:]
+					return event, nil
+				}
 			}
 			return StreamEvent{}, err
 		}
-		event, err := p.parseFrame(frame)
+		events, err := p.parseFrame(frame)
 		if err != nil {
 			return StreamEvent{}, err
 		}
-		if event.Text != "" || event.Thinking != "" || event.Usage.TotalTokens > 0 || event.Usage.PromptTokens > 0 || event.Usage.CompletionTokens > 0 {
+		if len(events) == 0 {
+			continue
+		}
+		p.pendingEvents = append(p.pendingEvents, events...)
+		if len(p.pendingEvents) > 0 {
+			event := p.pendingEvents[0]
+			p.pendingEvents = p.pendingEvents[1:]
 			return event, nil
 		}
 	}
@@ -323,30 +375,66 @@ func (p *StreamParser) ToolUses() []provider.ToolUse {
 	return append([]provider.ToolUse(nil), p.toolUses...)
 }
 
-func (p *StreamParser) parseFrame(frame eventFrame) (StreamEvent, error) {
+func (p *StreamParser) FallbackThinkingCandidate() providerthinking.Candidate {
+	if p == nil || p.fallbackParser == nil {
+		return providerthinking.Candidate{}
+	}
+	return p.fallbackParser.ParsedCandidate()
+}
+
+func (p *StreamParser) parseFrame(frame eventFrame) ([]StreamEvent, error) {
 	if strings.EqualFold(frame.MessageType, "error") || strings.EqualFold(frame.MessageType, "exception") {
-		return StreamEvent{}, fmt.Errorf(errorMessageFromPayload(frame.Payload))
+		return nil, fmt.Errorf(errorMessageFromPayload(frame.Payload))
 	}
 	if len(frame.Payload) == 0 {
-		return StreamEvent{}, nil
+		return nil, nil
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(frame.Payload, &payload); err != nil {
-		return StreamEvent{}, nil
+		return nil, nil
 	}
+	usage := extractUsage(payload)
 
 	switch resolveEventType(frame.EventType, payload) {
 	case "assistantResponseEvent":
-		return StreamEvent{Text: deltaFromCumulative(&p.assistantContent, resolveTextField(payload, "content", "text")), Usage: extractUsage(payload)}, nil
+		return attachUsageEvents(p.emitAssistantResponseDelta(deltaFromCumulative(&p.assistantContent, resolveTextField(payload, "content", "text"))), usage), nil
 	case "reasoningContentEvent":
-		return StreamEvent{Thinking: deltaFromCumulative(&p.thinkingContent, resolveTextField(payload, "text", "content")), Usage: extractUsage(payload)}, nil
+		return attachUsageEvents(singleEvent(StreamEvent{Thinking: deltaFromCumulative(&p.thinkingContent, resolveTextField(payload, "text", "content"))}), usage), nil
 	case "toolUseEvent":
 		p.handleToolUseEvent(payload)
-		return StreamEvent{Usage: extractUsage(payload)}, nil
+		return attachUsageEvents(nil, usage), nil
 	default:
-		return StreamEvent{Usage: extractUsage(payload)}, nil
+		return attachUsageEvents(nil, usage), nil
 	}
+}
+
+func (p *StreamParser) emitAssistantResponseDelta(delta string) []StreamEvent {
+	if delta == "" {
+		return nil
+	}
+	if p == nil || p.fallbackParser == nil || !p.fallbackParser.Enabled() {
+		return singleEvent(StreamEvent{Text: delta})
+	}
+	return p.fallbackParser.Feed(delta)
+}
+
+func singleEvent(event StreamEvent) []StreamEvent {
+	if event.Text == "" && event.Thinking == "" && event.Usage.TotalTokens == 0 && event.Usage.PromptTokens == 0 && event.Usage.CompletionTokens == 0 {
+		return nil
+	}
+	return []StreamEvent{event}
+}
+
+func attachUsageEvents(events []StreamEvent, usage UsageSnapshot) []StreamEvent {
+	if usage.TotalTokens == 0 && usage.PromptTokens == 0 && usage.CompletionTokens == 0 {
+		return events
+	}
+	if len(events) == 0 {
+		return []StreamEvent{{Usage: usage}}
+	}
+	events[len(events)-1].Usage = usage
+	return events
 }
 
 func (p *StreamParser) handleToolUseEvent(payload map[string]any) {
@@ -672,22 +760,7 @@ func estimatePromptTokens(req provider.ChatRequest) int {
 			parts = append(parts, toolCallID)
 		}
 	}
-	// Built-in tools that Kiro doesn't support
-	builtinTools := map[string]bool{
-		"web_search":     true,
-		"code_execution": true,
-		"text_editor": true,
-		"computer":   true,
-	}
-	for _, tool := range req.Tools {
-		// Skip built-in tools for token estimation
-		toolType := strings.TrimSpace(tool.Type)
-		if toolType != "" && toolType != "function" {
-			continue
-		}
-		if builtinTools[strings.TrimSpace(tool.Function.Name)] {
-			continue
-		}
+	for _, tool := range provider.NormalizeToolsForProvider("kiro", req.Tools) {
 		parts = append(parts, strings.TrimSpace(tool.Function.Name), strings.TrimSpace(tool.Function.Description), marshalAny(tool.Function.Parameters))
 	}
 	if user := strings.TrimSpace(req.User); user != "" {

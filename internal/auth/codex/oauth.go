@@ -1,7 +1,7 @@
 package codex
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
 const (
@@ -131,7 +131,7 @@ func RenderCallbackPage(title, message string) string {
 </head>
 <body>
   <div class="card">
-    <p class="eyebrow">Cliro-Go</p>
+	    <p class="eyebrow">CLIRO</p>
     <h1>%s</h1>
     <p>%s</p>
   </div>
@@ -343,4 +343,3 @@ func (s *Service) finishAuthError(sessionID string, err error) {
 	}
 	s.log.Error("auth", "Codex OAuth failed: "+err.Error())
 }
-

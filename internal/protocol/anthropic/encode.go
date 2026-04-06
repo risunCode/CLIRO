@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/contract/rules"
+	contract "cliro/internal/contract"
+	"cliro/internal/contract/rules"
 
 	"github.com/google/uuid"
 )

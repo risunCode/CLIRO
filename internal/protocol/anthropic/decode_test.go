@@ -3,7 +3,7 @@ package anthropic
 import (
 	"testing"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 func TestMessagesToIR_MergesMessagesAndPreservesThinkingBlocks(t *testing.T) {
@@ -55,9 +55,9 @@ func TestMessagesToIR_MergesMessagesAndPreservesThinkingBlocks(t *testing.T) {
 
 func TestMessagesToIR_PreservesBuiltinToolType(t *testing.T) {
 	request, err := MessagesToIR(MessagesRequest{
-		Model: "claude-sonnet-4.5",
-		Messages: []Message{{Role: "user", Content: "search this"}},
-		Tools: []Tool{{Type: "web_search"}},
+		Model:      "claude-sonnet-4.5",
+		Messages:   []Message{{Role: "user", Content: "search this"}},
+		Tools:      []Tool{{Type: "web_search"}},
 		ToolChoice: map[string]any{"type": "web_search"},
 	})
 	if err != nil {
@@ -105,5 +105,31 @@ func TestParseThinkingConfig_ConvertsOpenAIReasoningEffortToAnthropicBudgetToken
 				}
 			}
 		})
+	}
+}
+
+func TestMessagesToIR_ConvertsOrphanToolResultsIntoUserMessage(t *testing.T) {
+	request, err := MessagesToIR(MessagesRequest{
+		Model:     "claude-sonnet-4.5",
+		MaxTokens: 128,
+		Messages: []Message{
+			{Role: "assistant", Content: []any{map[string]any{"type": "text", "text": "hello"}}},
+			{Role: "user", Content: []any{map[string]any{"type": "tool_result", "tool_use_id": "missing_call", "content": "orphan result"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("MessagesToIR: %v", err)
+	}
+	if len(request.Messages) != 2 {
+		t.Fatalf("message count = %d messages=%#v", len(request.Messages), request.Messages)
+	}
+	if request.Messages[1].Role != contract.RoleUser {
+		t.Fatalf("orphan role = %q", request.Messages[1].Role)
+	}
+	if request.Messages[1].ToolCallID != "" {
+		t.Fatalf("unexpected tool_call_id = %q", request.Messages[1].ToolCallID)
+	}
+	if request.Messages[1].Content != "orphan result" {
+		t.Fatalf("content = %#v", request.Messages[1].Content)
 	}
 }

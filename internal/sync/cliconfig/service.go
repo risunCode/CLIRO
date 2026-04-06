@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"cliro-go/internal/logger"
-	"cliro-go/internal/route"
+	"cliro/internal/logger"
+	"cliro/internal/route"
 )
 
 type Service struct {

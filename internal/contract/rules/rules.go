@@ -3,7 +3,7 @@ package rules
 import (
 	"errors"
 
-	"cliro-go/internal/contract"
+	"cliro/internal/contract"
 )
 
 type ProviderCapability struct {

@@ -27,7 +27,7 @@
   <svelte:fragment slot="header">
     <ModalWindowHeader
       title="Configuration Recovered"
-      description="CLIro-Go detected invalid local configuration data, recovered safe defaults, and kept the app running."
+      description="CLIRO detected invalid local configuration data, recovered safe defaults, and kept the app running."
     />
   </svelte:fragment>
 

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"cliro-go/internal/account"
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/logger"
-	provider "cliro-go/internal/provider"
+	"cliro/internal/account"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	"cliro/internal/logger"
+	provider "cliro/internal/provider"
 )
 
 type fakeExecutor struct {
@@ -332,7 +332,7 @@ func TestCompatV1RootRoute(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `"name":"CLIro-Go Gateway"`) {
+	if !strings.Contains(rr.Body.String(), `"name":"CLIRO Gateway"`) {
 		t.Fatalf("expected gateway metadata body, got %s", rr.Body.String())
 	}
 }

@@ -4,7 +4,7 @@
   import SurfaceCard from '@/components/common/SurfaceCard.svelte'
 
   export let busy = false
-  export let dataDirPath = '~/.cliro-go'
+  export let dataDirPath = '~/.cliro'
   export let onOpenDataDir: () => Promise<void>
 </script>
 

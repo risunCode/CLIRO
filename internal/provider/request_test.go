@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	contract "cliro-go/internal/contract"
+	contract "cliro/internal/contract"
 )
 
 func TestRequestFromIR(t *testing.T) {

@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
 )
 
 type ChatRequest struct {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"cliro-go/internal/provider"
-	"cliro-go/internal/util"
+	"cliro/internal/provider"
+	"cliro/internal/util"
 
 	"github.com/google/uuid"
 )

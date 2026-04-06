@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"cliro-go/internal/account"
-	"cliro-go/internal/auth"
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	"cliro-go/internal/logger"
-	provider "cliro-go/internal/provider"
+	"cliro/internal/account"
+	"cliro/internal/auth"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	"cliro/internal/logger"
+	provider "cliro/internal/provider"
 )
 
 func TestRuntimeClient_RetriesAfterFirstTokenTimeout(t *testing.T) {
@@ -93,6 +93,60 @@ func TestService_FailsOverAcrossAccounts(t *testing.T) {
 	failedAccount, ok := store.GetAccount("acct-fail")
 	if !ok || failedAccount.ErrorCount == 0 {
 		t.Fatalf("expected failed account to record the failed attempt, got %#v", failedAccount)
+	}
+}
+
+func TestService_LogsAttemptDiagnosticsForRetryFlow(t *testing.T) {
+	store, authManager, log := newTestDeps(t)
+	if err := store.UpsertAccount(config.Account{ID: "acct-fail", Provider: "kiro", Email: "fail@example.com", AccessToken: "token-fail", Enabled: true, CreatedAt: 1, UpdatedAt: 1, HealthState: config.AccountHealthReady}); err != nil {
+		t.Fatalf("UpsertAccount fail account: %v", err)
+	}
+	if err := store.UpsertAccount(config.Account{ID: "acct-ok", Provider: "kiro", Email: "ok@example.com", AccessToken: "token-ok", Enabled: true, CreatedAt: 2, UpdatedAt: 2, HealthState: config.AccountHealthReady}); err != nil {
+		t.Fatalf("UpsertAccount ok account: %v", err)
+	}
+
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.Header.Get("Authorization") {
+		case "Bearer token-fail":
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader(`{"message":"temporary upstream failure"}`))}, nil
+		case "Bearer token-ok":
+			body := bytesJoinFrames(t,
+				awsEventFrame(t, "assistantResponseEvent", map[string]any{"content": "hello"}),
+				awsEventFrame(t, "meteringEvent", map[string]any{"usage": map[string]any{"inputTokens": 1, "outputTokens": 2, "totalTokens": 3}}),
+			)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+		default:
+			return nil, io.ErrUnexpectedEOF
+		}
+	})
+
+	service := NewService(store, authManager, account.NewPool(store), log, &http.Client{Transport: transport, Timeout: 2 * time.Second})
+	_, status, message, err := service.Complete(context.Background(), provider.ChatRequest{RouteFamily: "anthropic_messages", Model: "claude-sonnet-4.5", Messages: []provider.Message{{Role: "user", Content: "hello"}}})
+	if err != nil {
+		t.Fatalf("Complete: status=%d message=%q err=%v", status, message, err)
+	}
+
+	entries := log.Entries(20)
+	results := make([]logger.Entry, 0)
+	for _, entry := range entries {
+		if entry.Event == "request.attempt_result" {
+			results = append(results, entry)
+		}
+	}
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 attempt_result entries, got %+v", entries)
+	}
+	if results[0].Fields["attempt"] != 1 || results[0].Fields["success"] != false {
+		t.Fatalf("first attempt fields = %#v", results[0].Fields)
+	}
+	if results[1].Fields["attempt"] != 2 || results[1].Fields["success"] != true {
+		t.Fatalf("second attempt fields = %#v", results[1].Fields)
+	}
+	if _, ok := results[0].Fields["retry_cause"]; !ok {
+		t.Fatalf("retry_cause missing from %#v", results[0].Fields)
+	}
+	if _, ok := results[1].Fields["upstream_open_ms"]; !ok {
+		t.Fatalf("upstream_open_ms missing from %#v", results[1].Fields)
 	}
 }
 

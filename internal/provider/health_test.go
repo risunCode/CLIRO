@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
 func TestClassifyHTTPFailure(t *testing.T) {

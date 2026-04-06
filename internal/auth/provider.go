@@ -3,10 +3,10 @@ package auth
 import (
 	"context"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
-type AuthProvider interface {
+type authProvider interface {
 	StartAuth() (*AuthStart, error)
 	StartSocialAuth(socialProvider string) (*AuthStart, error)
 	GetSession(sessionID string) AuthSessionView

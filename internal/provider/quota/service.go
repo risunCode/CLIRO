@@ -1,7 +1,7 @@
 package quota
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"context"
 	"fmt"
 	"net/http"
@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"cliro-go/internal/auth"
-	"cliro-go/internal/config"
-	"cliro-go/internal/logger"
-	coreprovider "cliro-go/internal/provider"
-	codexprovider "cliro-go/internal/provider/codex"
-	kiroprovider "cliro-go/internal/provider/kiro"
+	"cliro/internal/auth"
+	"cliro/internal/config"
+	"cliro/internal/logger"
+	coreprovider "cliro/internal/provider"
+	codexprovider "cliro/internal/provider/codex"
+	kiroprovider "cliro/internal/provider/kiro"
 )
 
 const fetchTimeout = 25 * time.Second

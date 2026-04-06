@@ -128,7 +128,7 @@
       {/if}
     {:else if isSocialFlow}
       <p>
-        Click "Open Link" to sign in with your selected provider. CLIro-Go will automatically open and complete the login.
+        Click "Open Link" to sign in with your selected provider. CLIRO will automatically open and complete the login.
       </p>
 
       <details class="mt-2">

@@ -1,8 +1,9 @@
 import { wailsClient } from '@/backend/client/wails-client'
-import { toCliSyncResult, toCliSyncStatus, toLocalModelCatalogItem, toProxyStatus } from '@/backend/compat/router-compat'
+import type { WailsCliSyncResult, WailsCliSyncStatus, WailsModelCatalogItem, WailsProxyStatus } from '@/backend/models/wails'
 import { buildEndpointTarget, getEndpointPreset } from '@/features/router/utils/endpoint-tester'
 import { getErrorMessage } from '@/shared/utils/error'
 import type {
+  CliSyncAppID,
   CliSyncFileInput,
   CliSyncResult,
   CliSyncStatus,
@@ -18,6 +19,57 @@ import type {
   UpdateCloudflaredSettingsInput,
   UpdateProxySettingsInput,
 } from '@/features/router/types'
+
+const toCliSyncAppID = (value: string): CliSyncAppID | null => {
+  if (value === 'claude-code' || value === 'opencode-cli' || value === 'kilo-cli' || value === 'codex-ai') {
+    return value
+  }
+  return null
+}
+
+const toProxyStatus = (payload: WailsProxyStatus): ProxyStatus => ({
+  ...payload,
+  schedulingMode: payload.schedulingMode || 'balance',
+  cloudflared: {
+    ...payload.cloudflared,
+    mode: payload.cloudflared.mode === 'auth' ? 'auth' : 'quick',
+    version: payload.cloudflared.version || '',
+    url: payload.cloudflared.url || '',
+    error: payload.cloudflared.error || '',
+  },
+})
+
+const toCliSyncStatus = (payload: WailsCliSyncStatus): CliSyncStatus | null => {
+  const id = toCliSyncAppID(payload.id)
+  if (!id) {
+    return null
+  }
+
+  return {
+    ...payload,
+    id,
+    installPath: payload.installPath || undefined,
+    version: payload.version || undefined,
+    currentBaseUrl: payload.currentBaseUrl || undefined,
+    currentModel: payload.currentModel || undefined,
+  }
+}
+
+const toCliSyncResult = (payload: WailsCliSyncResult): CliSyncResult => {
+  const id = toCliSyncAppID(payload.id)
+  if (!id) {
+    throw new Error('Unsupported CLI sync result id')
+  }
+
+  return {
+    ...payload,
+    id,
+    model: payload.model || undefined,
+    currentBaseUrl: payload.currentBaseUrl || undefined,
+  }
+}
+
+const toLocalModelCatalogItem = (payload: WailsModelCatalogItem): LocalModelCatalogItem => payload
 
 const fetchProxyModelCatalog = async (baseUrl: string, apiKey: string): Promise<LocalModelCatalogItem[]> => {
   const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '')

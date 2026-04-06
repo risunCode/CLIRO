@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-04-06
+
+### Changed
+
+- Renamed project/module identity from `cliro-go` to `cliro` and updated app branding to `CLIRO`.
+- Moved local app data directory from `~/.cliro-go/` to `~/.cliro` with no backward-compat retention.
+- Simplified frontend backend access by removing obsolete compat layers, barrel exports, and redundant wrappers.
+- Simplified close modal behavior so the first close shows the modal and the next close exits directly.
+
+### Fixed
+
+- Removed stale compatibility cleanup paths that were still targeting old `cliro-go` frontend/backend shims.
+
+### Tests & Validation
+
+- Validation passed for:
+  - `go test . ./internal/...`
+  - `npm run check`
+  - `wails build`
+
 ## [0.3.0] - 2026-04-01
 
 ### Added
@@ -50,7 +70,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 -  Claude Code CLI, Kilo CLI and OpenCode CLI now working properly*
-- Fixed Cloudflared install/status detection by broadening binary discovery under `~/.cliro-go/bin` and refreshing status at startup.
+- Fixed Cloudflared install/status detection by broadening binary discovery under `~/.cliro/bin` and refreshing status at startup.
 - Fixed CLI install-path detection and stale detection behavior in one-click sync workflows.
 - Fixed one-click CLI sync result ID mapping to avoid silent fallback to `claude-code` for unknown IDs.
 - Removed stale frontend auto-refresh settings/card logic that no longer matched current runtime behavior.
@@ -153,7 +173,7 @@ Initial release of **CLIro-Go**.
   - Sync Codex account to **Kilo CLI** (`~/.local/share/kilo/auth.json`)
   - Sync Codex account to **Opencode** (`~/.local/share/opencode/auth.json`)
   - Sync Codex account to **Codex CLI** (`~/.codex/auth.json`)
-  - Codex CLI backup creation before overwrite (`.bak.cliro-go`)
+  - Codex CLI backup creation before overwrite (`.bak.cliro`)
 - UI/UX modules:
   - compact dashboard with KPI grid + host-aware greeting hero
   - accounts grid/list views with provider tabs and search
@@ -167,7 +187,7 @@ Initial release of **CLIro-Go**.
 ### Security
 
 - Restricted file permissions for persisted auth/token files where applicable (`0600`).
-- Local data isolation in `~/.cliro-go/` (`config.json`, `accounts.json`, `stats.json`).
+- Local data isolation in `~/.cliro/` (`config.json`, `accounts.json`, `stats.json`).
 
 ### Developer Experience
 

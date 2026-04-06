@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"cliro-go/internal/provider"
-	"cliro-go/internal/util"
+	"cliro/internal/provider"
+	"cliro/internal/util"
 )
 
 const socialCallbackPort = 9876
@@ -58,7 +58,7 @@ func (s *Service) startSocialCallbackServer(ctx context.Context, expectedState s
 			writeResult(SocialCallbackResult{Error: "state mismatch"}, http.StatusBadRequest, "Login Failed", "Invalid state parameter")
 			return
 		}
-		writeResult(SocialCallbackResult{Code: code, State: state}, http.StatusOK, "Login Successful", "Return to CLIro-Go to finish connecting your Kiro account.")
+		writeResult(SocialCallbackResult{Code: code, State: state}, http.StatusOK, "Login Successful", "Return to CLIRO to finish connecting your Kiro account.")
 	})
 	server.Handler = mux
 

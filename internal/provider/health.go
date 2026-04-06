@@ -1,13 +1,13 @@
 package provider
 
 import (
-	"cliro-go/internal/util"
+	"cliro/internal/util"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
-	"cliro-go/internal/config"
+	"cliro/internal/config"
 )
 
 var transientBackoffSeconds = []int{10, 30, 60}
@@ -35,6 +35,7 @@ const (
 	FailureQuotaCooldown      FailureClass = "quota_cooldown"
 	FailureDurableDisabled    FailureClass = "durable_disabled"
 	FailureRequestShape       FailureClass = "request_shape"
+	FailureEmptyStream        FailureClass = "empty_stream"
 	FailureProviderFatal      FailureClass = "provider_fatal"
 )
 

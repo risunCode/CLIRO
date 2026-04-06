@@ -15,8 +15,6 @@
 <AppCloseModal
   open={overlays.showClosePrompt}
   trayAvailable={overlays.trayAvailable}
-  armed={overlays.closePromptArmed}
-  countdownSeconds={overlays.closePromptCountdown}
   on:dismiss={appActions.dismissClosePrompt}
   on:confirmQuit={appActions.confirmQuit}
   on:hideToTray={appActions.hideToTray}

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"cliro-go/internal/config"
-	contract "cliro-go/internal/contract"
-	provider "cliro-go/internal/provider"
+	"cliro/internal/config"
+	contract "cliro/internal/contract"
+	provider "cliro/internal/provider"
 )
 
 func TestBuildRequestPayload_StripsToolContentWhenToolsMissing(t *testing.T) {
@@ -321,5 +321,27 @@ func TestBuildRequestPayload_ForcedThinkingInjectionStaysOffForNonThinkingTraffi
 	content := payload.ConversationState.CurrentMessage.UserInputMessage.Content
 	if strings.Contains(content, forcedThinkingModeTag) {
 		t.Fatalf("expected no thinking injection for non-thinking request, got %q", content)
+	}
+}
+
+func TestBuildRequestPayload_FiltersUnsupportedKiroTools(t *testing.T) {
+	payload, err := buildRequestPayload(provider.ChatRequest{
+		Model: "claude-sonnet-4.5",
+		Tools: []provider.Tool{
+			{Type: "function", Function: provider.ToolFunction{Name: "Read", Parameters: map[string]any{"type": "object"}}},
+			{Type: "function", Function: provider.ToolFunction{Name: "web_search", Parameters: map[string]any{"type": "object"}}},
+			{Type: "computer", Function: provider.ToolFunction{Name: "computer", Parameters: map[string]any{"type": "object"}}},
+		},
+		Messages: []provider.Message{{Role: "user", Content: "inspect repo"}},
+	}, config.Account{}, config.ThinkingSettings{})
+	if err != nil {
+		t.Fatalf("buildRequestPayload: %v", err)
+	}
+	ctx := payload.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext
+	if ctx == nil || len(ctx.Tools) != 1 {
+		t.Fatalf("expected only supported tool definitions, got %#v", ctx)
+	}
+	if ctx.Tools[0].ToolSpecification.Name != "Read" {
+		t.Fatalf("tool definition = %#v", ctx.Tools[0])
 	}
 }

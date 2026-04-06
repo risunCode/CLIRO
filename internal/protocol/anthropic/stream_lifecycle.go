@@ -1,6 +1,6 @@
 package anthropic
 
-import contract "cliro-go/internal/contract"
+import contract "cliro/internal/contract"
 
 type StreamEventEmitter func(eventName string, payload map[string]any)
 
