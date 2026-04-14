@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -12,6 +13,7 @@ func (m *Manager) UpsertAccount(account Account) error {
 		account.CreatedAt = now
 	}
 	account.UpdatedAt = now
+	account.Provider = strings.ToLower(strings.TrimSpace(account.Provider))
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.accounts {
@@ -22,6 +24,7 @@ func (m *Manager) UpsertAccount(account Account) error {
 		}
 	}
 	m.accounts = append(m.accounts, account)
+	sort.Slice(m.accounts, func(i, j int) bool { return m.accounts[i].CreatedAt > m.accounts[j].CreatedAt })
 	return m.saveAccounts()
 }
 

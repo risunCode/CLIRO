@@ -52,19 +52,19 @@ CLIRO mimics official client user agents to ensure compatibility with upstream p
 
 **Implementation**: `internal/platform/useragent.go`
 
-**Current Version**: `opencode/1.2.27`
+**Current Version**: `codex-tui/0.118.0`
 
-**Format**: `opencode/{version} ({os} {osVersion}; {arch})`
+**Format**: `codex-tui/{version} ({os}; {arch}) {app} (codex-tui; {version})`
 
-**Examples**:
-- Windows: `opencode/1.2.27 (windows 10.0.26100; amd64)`
-- Mac ARM: `opencode/1.2.27 (darwin 23.0.0; arm64)`
-- Mac Intel: `opencode/1.2.27 (darwin 23.0.0; amd64)`
-- Linux: `opencode/1.2.27 (linux 6.5.0; amd64)`
+**Example**:
+- `codex-tui/0.118.0 (Mac OS 26.3.1; arm64) iTerm.app/3.6.9 (codex-tui; 0.118.0)`
 
-**Headers Sent**:
-- `User-Agent`: Dynamic opencode format with OS detection
-- `Originator`: `opencode`
+**Headers Sent on Inference Requests**:
+- `User-Agent`: `codex-tui` format above
+- `Originator`: `codex-tui`
+- `Version`: `0.118.0`
+- `Origin`: `https://chatgpt.com`
+- `Referer`: `https://chatgpt.com/`
 - `Session_id`: Random UUID per request
 
 ### Kiro Provider (AWS)
@@ -102,7 +102,7 @@ CLIRO mimics official client user agents to ensure compatibility with upstream p
 
 When updating user agent versions:
 
-1. **Codex/OpenCode**: Update `opencodeVersion` constant in `internal/platform/useragent.go`
+1. **Codex TUI**: Update `codexTUIVersion` constant in `internal/platform/useragent.go`
 2. **Kiro IDE**: Update version strings in:
    - `internal/provider/kiro/service.go` (runtime constants)
    - `internal/auth/kiro/types.go` (auth constants)

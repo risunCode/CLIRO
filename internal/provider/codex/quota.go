@@ -38,6 +38,7 @@ func (f *QuotaFetcher) FetchQuota(ctx context.Context, account config.Account) (
 		path   string
 		source string
 	}{
+		{path: chatGPTBaseURL + "/wham/usage", source: "wham/usage"},
 		{path: codexQuotaBaseURL + "/quotas", source: "codex/quotas"},
 		{path: codexQuotaBaseURL + "/quota", source: "codex/quota"},
 		{path: codexQuotaBaseURL + "/usage", source: "codex/usage"},
@@ -80,7 +81,6 @@ func (f *QuotaFetcher) tryQuotaEndpoint(ctx context.Context, account config.Acco
 		return config.QuotaInfo{}, err
 	}
 	applyCodexHeaders(req, account)
-	req.Header.Set("Originator", "opencode")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://chatgpt.com")
@@ -122,7 +122,8 @@ func applyCodexHeaders(req *http.Request, account config.Account) {
 	req.Header.Set("Authorization", "Bearer "+account.AccessToken)
 	req.Header.Set("Session_id", uuid.NewString())
 	req.Header.Set("User-Agent", codexUserAgent)
-	req.Header.Set("Originator", "opencode")
+	req.Header.Set("Version", codexVersion)
+	req.Header.Set("Originator", "codex-tui")
 	if strings.TrimSpace(account.AccountID) != "" {
 		req.Header.Set("Chatgpt-Account-Id", account.AccountID)
 	}

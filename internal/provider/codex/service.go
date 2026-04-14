@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"cliro/internal/account"
@@ -25,12 +26,20 @@ import (
 
 const (
 	codexBaseURL          = "https://chatgpt.com/backend-api/codex"
-	codexVersion          = "0.117.0"
+	codexVersion          = "0.118.0"
 	quotaCooldown         = time.Hour
 	defaultRequestTimeout = 5 * time.Minute
 )
 
-var codexUserAgent = platform.BuildOpencodeUserAgent()
+var codexUserAgent = platform.BuildCodexTUIUserAgent()
+
+// O15: reuse scanner read buffers across requests to avoid per-request 64 KiB heap allocation.
+var scannerBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 0, 64*1024)
+		return &buf
+	},
+}
 
 type Service struct {
 	store      *config.Manager
@@ -300,8 +309,11 @@ func (s *Service) buildRequest(ctx context.Context, account config.Account, req 
 	httpReq.Header.Set("Authorization", "Bearer "+account.AccessToken)
 	httpReq.Header.Set("Session_id", uuid.NewString())
 	httpReq.Header.Set("User-Agent", codexUserAgent)
+	httpReq.Header.Set("Version", codexVersion)
+	httpReq.Header.Set("Origin", "https://chatgpt.com")
+	httpReq.Header.Set("Referer", "https://chatgpt.com/")
 	httpReq.Header.Set("Connection", "Keep-Alive")
-	httpReq.Header.Set("Originator", "opencode")
+	httpReq.Header.Set("Originator", "codex-tui")
 	if strings.TrimSpace(account.AccountID) != "" {
 		httpReq.Header.Set("Chatgpt-Account-Id", account.AccountID)
 	}
@@ -315,7 +327,13 @@ func (s *Service) collectCompletion(body io.Reader, model string, toolNames prov
 	out.Model = model
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	// O15: pull buffer from pool; return it on exit so the next request reuses it.
+	bufPtr := scannerBufPool.Get().(*[]byte)
+	defer func() {
+		*bufPtr = (*bufPtr)[:0]
+		scannerBufPool.Put(bufPtr)
+	}()
+	scanner.Buffer(*bufPtr, 10*1024*1024)
 	var textBuilder strings.Builder
 	var thinkingBuilder strings.Builder
 	toolUses := make([]provider.ToolUse, 0)
@@ -612,7 +630,7 @@ func (s *Service) logQuotaEvent(level string, event string, requestID string, fi
 
 func (s *Service) logEvent(level string, scope string, event string, requestID string, fields ...logger.Field) {
 	eventFields := append([]logger.Field{logger.String("request_id", requestID), logger.String("provider", "codex")}, fields...)
-	switch strings.ToLower(strings.TrimSpace(level)) {
+	switch level {
 	case "warn":
 		s.log.WarnEvent(scope, event, eventFields...)
 	case "error":

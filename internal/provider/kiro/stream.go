@@ -27,26 +27,14 @@ type UsageSnapshot struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
-	Credits          int
-	CacheReadTokens  int
-	CacheWriteTokens int
-	ReasoningTokens  int
 }
 
 func collectCompletion(body io.Reader, req provider.ChatRequest) (provider.CompletionOutcome, error) {
 	return collectCompletionWithTagsAndMapping(body, req, nil, provider.ToolNameMapping{}, nil)
 }
 
-func collectCompletionWithCallback(body io.Reader, req provider.ChatRequest, callback func(StreamEvent)) (provider.CompletionOutcome, error) {
-	return collectCompletionWithTagsAndMapping(body, req, nil, provider.ToolNameMapping{}, callback)
-}
-
 func collectCompletionWithTags(body io.Reader, req provider.ChatRequest, fallbackTags []string) (provider.CompletionOutcome, error) {
 	return collectCompletionWithTagsAndMapping(body, req, fallbackTags, provider.ToolNameMapping{}, nil)
-}
-
-func collectCompletionWithTagsAndCallback(body io.Reader, req provider.ChatRequest, fallbackTags []string, callback func(StreamEvent)) (provider.CompletionOutcome, error) {
-	return collectCompletionWithTagsAndMapping(body, req, fallbackTags, provider.ToolNameMapping{}, callback)
 }
 
 func collectCompletionWithTagsAndMapping(body io.Reader, req provider.ChatRequest, fallbackTags []string, toolNames provider.ToolNameMapping, callback func(StreamEvent)) (provider.CompletionOutcome, error) {
@@ -55,7 +43,11 @@ func collectCompletionWithTagsAndMapping(body io.Reader, req provider.ChatReques
 		Model: req.Model,
 	}
 
-	parser := NewStreamParserWithFallbackTags(body, fallbackTags, req.Thinking.Requested)
+	effectiveTags := fallbackTags
+	if req.Thinking.Requested && len(effectiveTags) == 0 {
+		effectiveTags = []string{"<thinking>", "<think>"}
+	}
+	parser := NewStreamParserWithFallbackTags(body, effectiveTags, req.Thinking.Requested)
 	var textBuilder strings.Builder
 	var thinkingBuilder strings.Builder
 
@@ -86,7 +78,7 @@ func collectCompletionWithTagsAndMapping(body io.Reader, req provider.ChatReques
 	parsedThinking := parser.FallbackThinkingCandidate()
 	parsedText := text
 	if strings.TrimSpace(parsedThinking.Thinking) == "" {
-		parsedThinking, parsedText = parseFallbackThinking(text, req, fallbackTags)
+		parsedThinking, parsedText = parseFallbackThinking(text, req, effectiveTags)
 	}
 	selection := providerthinking.Select(providerthinking.Inputs{
 		Request: req.Thinking,
@@ -498,8 +490,8 @@ func (p *StreamParser) finalizeCurrentTool() {
 }
 
 func readEventFrame(reader io.Reader) (eventFrame, error) {
-	prelude := make([]byte, 12)
-	if _, err := io.ReadFull(reader, prelude); err != nil {
+	var prelude [12]byte
+	if _, err := io.ReadFull(reader, prelude[:]); err != nil {
 		return eventFrame{}, err
 	}
 
@@ -565,8 +557,9 @@ func parseEventHeaders(headers []byte) (string, string) {
 }
 
 func resolveEventType(headerType string, payload map[string]any) string {
-	if strings.TrimSpace(headerType) != "" {
-		return strings.TrimSpace(headerType)
+	// O18: evaluate TrimSpace once with an if-init statement.
+	if t := strings.TrimSpace(headerType); t != "" {
+		return t
 	}
 	if _, ok := payload["toolUseId"]; ok {
 		return "toolUseEvent"
@@ -634,6 +627,13 @@ func deltaFromCumulative(previous *string, current string) string {
 }
 
 func extractUsage(payload map[string]any) UsageSnapshot {
+	// O10: fast-path — skip alloc when none of the usage keys are present.
+	_, hasUsage := payload["usage"]
+	_, hasTokenUsage := payload["tokenUsage"]
+	_, hasToken_Usage := payload["token_usage"]
+	if !hasUsage && !hasTokenUsage && !hasToken_Usage {
+		return UsageSnapshot{}
+	}
 	usageMaps := make([]map[string]any, 0, 4)
 	collectUsageMaps(payload, &usageMaps)
 	usage := UsageSnapshot{}
@@ -661,8 +661,13 @@ func collectUsageMaps(value any, usageMaps *[]map[string]any) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, child := range typed {
-			lowerKey := strings.ToLower(strings.TrimSpace(key))
-			if lowerKey == "usage" || lowerKey == "tokenusage" || lowerKey == "token_usage" {
+			// O16: check canonical forms first; only fall through to a lowercased comparison as a defensive fallback.
+			match := key == "usage" || key == "tokenUsage" || key == "token_usage"
+			if !match {
+				lowerKey := strings.ToLower(strings.TrimSpace(key))
+				match = lowerKey == "usage" || lowerKey == "tokenusage" || lowerKey == "token_usage"
+			}
+			if match {
 				if usage, ok := child.(map[string]any); ok {
 					*usageMaps = append(*usageMaps, usage)
 				}
@@ -809,8 +814,9 @@ func marshalAny(value any) string {
 func nonEmptyStrings(parts []string) []string {
 	filtered := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if strings.TrimSpace(part) != "" {
-			filtered = append(filtered, strings.TrimSpace(part))
+		// O17: compute TrimSpace once instead of twice per element.
+		if t := strings.TrimSpace(part); t != "" {
+			filtered = append(filtered, t)
 		}
 	}
 	return filtered

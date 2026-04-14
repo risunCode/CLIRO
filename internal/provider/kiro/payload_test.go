@@ -198,7 +198,8 @@ func TestBuildRequestPayload_ToolOnlyAssistantAndToolResultsUseKiroSafePlacehold
 	}
 }
 
-func TestBuildRequestPayload_SplitsParallelToolRoundTripsIntoAlternatingHistory(t *testing.T) {
+func TestBuildRequestPayload_ParallelToolCallsPreservedAsOneAssistantMessage(t *testing.T) {
+	// Kiro API accepts multiple toolUses in one assistantResponseMessage — no splitting required.
 	request := provider.ChatRequest{
 		Model: "claude-sonnet-4.5",
 		Tools: []provider.Tool{
@@ -219,20 +220,15 @@ func TestBuildRequestPayload_SplitsParallelToolRoundTripsIntoAlternatingHistory(
 	if err != nil {
 		t.Fatalf("normalizeRequest: %v", err)
 	}
-	if len(normalized) != 5 {
-		t.Fatalf("expected normalized alternating tool round-trips, got %#v", normalized)
+	// user + assistant (both tools together) + user (both results merged) = 3
+	if len(normalized) != 3 {
+		t.Fatalf("expected 3 normalized messages (no parallel split), got %d: %#v", len(normalized), normalized)
 	}
-	if len(normalized[1].ToolUses) != 1 || normalized[1].ToolUses[0].ToolUseID != "tool_1" {
-		t.Fatalf("expected first split assistant tool use, got %#v", normalized[1])
+	if len(normalized[1].ToolUses) != 2 {
+		t.Fatalf("expected both tool uses on one assistant message, got %#v", normalized[1])
 	}
-	if len(normalized[2].ToolResults) != 1 || normalized[2].ToolResults[0].ToolUseID != "tool_1" {
-		t.Fatalf("expected first split tool result, got %#v", normalized[2])
-	}
-	if len(normalized[3].ToolUses) != 1 || normalized[3].ToolUses[0].ToolUseID != "tool_2" {
-		t.Fatalf("expected second split assistant tool use, got %#v", normalized[3])
-	}
-	if len(normalized[4].ToolResults) != 1 || normalized[4].ToolResults[0].ToolUseID != "tool_2" {
-		t.Fatalf("expected second split tool result, got %#v", normalized[4])
+	if len(normalized[2].ToolResults) != 2 {
+		t.Fatalf("expected both tool results on one user message, got %#v", normalized[2])
 	}
 
 	payload, err := buildRequestPayload(request, config.Account{}, config.ThinkingSettings{})
@@ -240,38 +236,48 @@ func TestBuildRequestPayload_SplitsParallelToolRoundTripsIntoAlternatingHistory(
 		t.Fatalf("buildRequestPayload: %v", err)
 	}
 	history := payload.ConversationState.History
-	if len(history) != 4 {
-		t.Fatalf("expected alternating split history, got %#v", history)
+	// history: [user "inspect repo", assistant with 2 toolUses]
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history entries (no split), got %d: %#v", len(history), history)
 	}
-	if history[1].AssistantResponseMessage == nil || len(history[1].AssistantResponseMessage.ToolUses) != 1 || history[1].AssistantResponseMessage.ToolUses[0].ToolUseID != "tool_1" {
-		t.Fatalf("expected first assistant tool use split out, got %#v", history[1])
-	}
-	if history[2].UserInputMessage == nil || history[2].UserInputMessage.UserInputMessageContext == nil || len(history[2].UserInputMessage.UserInputMessageContext.ToolResults) != 1 || history[2].UserInputMessage.UserInputMessageContext.ToolResults[0].ToolUseID != "tool_1" {
-		t.Fatalf("expected first tool result split into history, got %#v", history[2])
+	if history[1].AssistantResponseMessage == nil || len(history[1].AssistantResponseMessage.ToolUses) != 2 {
+		t.Fatalf("expected assistant history with 2 tool uses, got %#v", history[1])
 	}
 	current := payload.ConversationState.CurrentMessage.UserInputMessage
-	if current.UserInputMessageContext == nil || len(current.UserInputMessageContext.ToolResults) != 1 || current.UserInputMessageContext.ToolResults[0].ToolUseID != "tool_2" {
-		t.Fatalf("expected current tool result to contain last tool round-trip, got %#v", current.UserInputMessageContext)
+	if current.UserInputMessageContext == nil || len(current.UserInputMessageContext.ToolResults) != 2 {
+		t.Fatalf("expected current message with both tool results, got %#v", current.UserInputMessageContext)
 	}
 }
 
-func TestBuildRequestPayload_FiltersUnknownToolResultsAgainstKnownToolUses(t *testing.T) {
+func TestBuildRequestPayload_FiltersUnknownToolResultsAtPayloadLevel(t *testing.T) {
+	// Unknown tool_use_ids are filtered at payload-build time (sanitizeCurrentToolResults),
+	// not at normalize time. Known IDs pass through; unknown IDs are dropped.
 	payload, err := buildRequestPayload(provider.ChatRequest{
 		Model: "claude-sonnet-4.5",
 		Tools: []provider.Tool{{Type: "function", Function: provider.ToolFunction{Name: "Read", Parameters: map[string]any{"type": "object"}}}},
 		Messages: []provider.Message{
 			{Role: "user", Content: "inspect repo"},
 			{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "tool_1", Type: "function", Function: provider.ToolCallTarget{Name: "Read", Arguments: `{"file_path":"README.md"}`}}}},
-			{Role: "tool", ToolCallID: "tool_1", Content: "README contents"},
-			{Role: "user", Content: []any{map[string]any{"type": "tool_result", "tool_use_id": "unknown", "content": "ignored"}}},
+			// Current message: mix of known (tool_1) and unknown tool results
+			{Role: "user", Content: []any{
+				map[string]any{"type": "tool_result", "tool_use_id": "tool_1", "content": "README contents"},
+				map[string]any{"type": "tool_result", "tool_use_id": "unknown_stale", "content": "ignored"},
+			}},
 		},
 	}, config.Account{}, config.ThinkingSettings{})
 	if err != nil {
 		t.Fatalf("buildRequestPayload: %v", err)
 	}
 	current := payload.ConversationState.CurrentMessage.UserInputMessage
-	if current.UserInputMessageContext != nil && len(current.UserInputMessageContext.ToolResults) != 0 {
-		t.Fatalf("expected unknown tool result to be removed, got %#v", current.UserInputMessageContext.ToolResults)
+	if current.UserInputMessageContext == nil {
+		t.Fatalf("expected tool context on current message")
+	}
+	// tool_1 is known — must survive
+	if len(current.UserInputMessageContext.ToolResults) != 1 {
+		t.Fatalf("expected exactly 1 tool result (known ID only), got %#v", current.UserInputMessageContext.ToolResults)
+	}
+	if current.UserInputMessageContext.ToolResults[0].ToolUseID != "tool_1" {
+		t.Fatalf("expected tool_1 to survive, got %#v", current.UserInputMessageContext.ToolResults[0])
 	}
 }
 

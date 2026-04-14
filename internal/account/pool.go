@@ -86,7 +86,7 @@ func (p *Pool) availableAccountsByProvider(provider string) []config.Account {
 
 	for i := 0; i < len(accounts); i++ {
 		account := accounts[(start+i)%len(accounts)]
-		if targetProvider != "" && strings.ToLower(strings.TrimSpace(account.Provider)) != targetProvider {
+		if targetProvider != "" && account.Provider != targetProvider {
 			continue
 		}
 		if accountAvailabilityState(account, now) != config.AccountHealthReady {
@@ -120,7 +120,7 @@ func (p *Pool) AvailabilitySnapshot(provider string) AvailabilitySnapshot {
 	snapshot := AvailabilitySnapshot{Provider: targetProvider}
 
 	for _, account := range accounts {
-		if targetProvider != "" && strings.ToLower(strings.TrimSpace(account.Provider)) != targetProvider {
+		if targetProvider != "" && account.Provider != targetProvider {
 			continue
 		}
 		snapshot.TotalCount++

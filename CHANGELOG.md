@@ -2,7 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.3.1] - 2026-04-06
+## [0.3.2] - 2026-04-14
+
+### Changed
+
+- Removed dead code across `internal/provider/kiro/normalize.go` and `stream.go`: 4 unreachable normalization functions, 2 dead stream helpers, 4 unused `UsageSnapshot` fields.
+- Extracted shared auth helpers `TokenExpired` and `DefaultHTTPClient` to `internal/auth/shared` to eliminate duplication between `auth/codex` and `auth/kiro`.
+- Replaced per-request `make([]byte, 0, 64*1024)` scanner buffer in Codex streaming path with a `sync.Pool` to reduce GC pressure under concurrent load.
+- Stack-allocated 12-byte prelude buffer in `readEventFrame` (Kiro EventStream parser) to eliminate two small heap allocations per streaming frame.
+- Hoisted Kiro request payload build out of the per-attempt inner retry loop — payload is now built once per account candidate.
+- Added atomic lock-free model alias snapshot (`atomic.Pointer`) on `config.Manager` so the hot proxy request path avoids a mutex + map clone per request.
+- Added targeted `ThinkingSettings()` read method on `config.Manager` to avoid a full `Snapshot()` clone on every Kiro request.
+- Maintained account sort invariant at write time (`UpsertAccount`, `load`) so `Accounts()` no longer re-sorts on every read.
+- Normalized `account.Provider` to lowercase at write time; removed runtime `strings.ToLower` from hot pool comparison path.
+- Pre-computed Kiro origin byte patterns (`originAIEditor`, `originCLI`) and machine ID as package-level vars to eliminate per-request allocations.
+- Single-trimmed `req.Model` and `req.RouteFamily` at top of `completePrepared` in both providers instead of re-trimming on each use.
+- Added fast-path in `extractUsage` to skip allocation when no usage keys are present in the stream payload.
+- Collapsed `upstreamErrorMessage` to a single `json.Unmarshal` call probing all error keys in one pass.
+- Rewrote `collapseBlankLines` to a single-pass `strings.Builder` with a fast-path for inputs containing no newlines.
+- Added fast-path in `stripInternalMetadataBlocks` to skip regex when `<environment_details>` tag is absent.
+- Simplified `switch level` in logging helpers across gateway and provider packages by removing redundant `strings.ToLower(strings.TrimSpace(...))` wrapping.
+- Switched gateway hot path from `ModelAliases()` (lock + clone) to `ModelAliasesSnapshot()` (atomic load, no clone).
+- Frontend: added `healthState ?? 'ready'` fallback in account presenter to correctly handle accounts where backend omits the field via `omitempty`.
+- Frontend: removed redundant `.toLowerCase()` in `normalizeProviderID` — backend now guarantees lowercase provider values at write time.
+
+### Tests & Validation
+
+- Validation passed for:
+  - `go test ./...`
+  - `wails build`
+
+
 
 ### Changed
 

@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"cliro/internal/auth/shared"
 	provider "cliro/internal/provider"
 	"context"
 	"encoding/json"
@@ -27,16 +28,28 @@ type Service struct {
 	mu             sync.RWMutex
 	oauthSessions  map[string]*oauthSession
 	callbackServer *http.Server
+	loop           *refreshLoop
 }
 
 func NewService(store *config.Manager, log *logger.Logger, httpClient func() *http.Client, refreshQuota func(string) error) *Service {
-	return &Service{
+	svc := &Service{
 		store:         store,
 		log:           log,
 		httpClient:    httpClient,
 		refreshQuota:  refreshQuota,
 		oauthSessions: map[string]*oauthSession{},
 	}
+	svc.loop = newRefreshLoop(store, log, defaultRefreshInterval, func(acc config.Account) error {
+		_, err := svc.RefreshAccount(acc, false)
+		return err
+	})
+	return svc
+}
+
+// StartRefreshLoop starts the background token refresh goroutine.
+// It should be called once after the service is wired up and the app is ready.
+func (s *Service) StartRefreshLoop(ctx context.Context) {
+	go s.loop.Start(ctx)
 }
 
 func (s *Service) StartAuth() (*AuthStart, error) {
@@ -144,6 +157,9 @@ func (s *Service) SubmitAuthCode(sessionID string, code string) error {
 }
 
 func (s *Service) Shutdown(ctx context.Context) error {
+	if s.loop != nil {
+		s.loop.Stop()
+	}
 	s.mu.Lock()
 	for _, session := range s.oauthSessions {
 		if session.cancel != nil {
@@ -160,7 +176,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
 }
 
 func (s *Service) RefreshAccount(account config.Account, force bool) (config.Account, error) {
-	if !force && !tokenExpired(account, time.Now()) {
+	if !force && !shared.TokenExpired(account, time.Now()) {
 		return account, nil
 	}
 	if strings.TrimSpace(account.RefreshToken) == "" {
@@ -169,14 +185,7 @@ func (s *Service) RefreshAccount(account config.Account, force bool) (config.Acc
 
 	tokens, err := s.refreshTokens(context.Background(), account.RefreshToken)
 	if err != nil {
-		if blockedMsg, blocked := config.BlockedAccountReason(err.Error()); blocked {
-			_ = s.store.MarkAccountBanned(account.ID, blockedMsg)
-		} else if reloginMessage, refreshable := config.RefreshableAuthReason(err.Error()); refreshable {
-			_ = s.store.MarkAccountReloginRequired(account.ID, reloginMessage)
-			if updated, ok := s.store.GetAccount(account.ID); ok {
-				account = updated
-			}
-		}
+		shared.HandleRefreshFailure(s.store, s.log, &account, err)
 		s.log.Error("auth", "refresh failed for "+account.Email+": "+err.Error())
 		return account, err
 	}
@@ -213,7 +222,7 @@ func (s *Service) RefreshAccount(account config.Account, force bool) (config.Acc
 		return account, err
 	}
 
-	refreshed, _ := s.store.GetAccount(account.ID)
+	refreshed, _ := shared.FetchUpdatedAccount(s.store, s.log, account)
 	s.log.Info("auth", "refreshed token for "+refreshed.Email)
 	return refreshed, nil
 }
@@ -228,12 +237,7 @@ func (s *Service) refreshNewAccountQuota(accountID string, logMessage string) {
 }
 
 func (s *Service) client() *http.Client {
-	if s.httpClient != nil {
-		if client := s.httpClient(); client != nil {
-			return client
-		}
-	}
-	return &http.Client{Timeout: 60 * time.Second}
+	return shared.DefaultHTTPClient(s.httpClient)
 }
 
 func (s *Service) accountFromTokens(tokens *TokenExchangeResponse) (config.Account, error) {
@@ -319,7 +323,11 @@ func (s *Service) refreshTokens(ctx context.Context, refreshToken string) (*Toke
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("refresh token failed (%d): %s", resp.StatusCode, provider.CompactHTTPBody(data))
+		bodyStr := provider.CompactHTTPBody(data)
+		if strings.Contains(strings.ToLower(bodyStr), "refresh_token_reused") {
+			return nil, fmt.Errorf("refresh_token_reused: %s", bodyStr)
+		}
+		return nil, fmt.Errorf("refresh token failed (%d): %s", resp.StatusCode, bodyStr)
 	}
 
 	var parsed TokenExchangeResponse
@@ -329,9 +337,3 @@ func (s *Service) refreshTokens(ctx context.Context, refreshToken string) (*Toke
 	return &parsed, nil
 }
 
-func tokenExpired(account config.Account, now time.Time) bool {
-	if account.ExpiresAt <= 0 {
-		return false
-	}
-	return now.Unix() >= account.ExpiresAt
-}

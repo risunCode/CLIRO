@@ -270,6 +270,8 @@ func (a *App) startup(ctx context.Context) {
 	a.auth = auth.NewManager(store, a.log)
 	a.quota = providerquota.NewService(store, a.auth, a.log, a.auth.HTTPClient())
 	a.auth.SetQuotaRefresher(a.quota)
+	a.auth.StartCodexRefreshLoop(ctx)
+	a.quota.StartAutoQuotaRefreshLoop(ctx)
 	a.proxy = gateway.NewServer(store, a.auth, a.pool, a.log)
 	a.cf = cloudflared.NewManager(dataDir, a.log)
 	if a.cf != nil {

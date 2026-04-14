@@ -289,8 +289,15 @@ func findRealTag(text string, tag string, startIndex int) int {
 	}
 }
 
-// findRealThinkingEndTag finds a "real" thinking end tag that is followed by \n\n
-// This prevents premature closing when the model mentions </thinking> inside thinking content
+// findRealThinkingEndTag finds a "real" thinking end tag.
+// A real end tag is one that is:
+//   - at the end of the buffer (no content after it)
+//   - followed by only whitespace
+//   - followed by \n\n (double newline separator)
+//   - followed by visible text (the tag closes thinking and text begins)
+//
+// We skip the tag only when the character immediately after is a quote character,
+// which suggests the model is referencing the tag name inside thinking content.
 func findRealThinkingEndTag(text string, tag string, startIndex int) int {
 	searchStart := maxIndex(0, startIndex)
 	for {
@@ -298,18 +305,25 @@ func findRealThinkingEndTag(text string, tag string, startIndex int) int {
 		if pos == -1 {
 			return -1
 		}
-		// Check if followed by \n\n (real end) or at buffer end with only whitespace after
 		afterTag := pos + len(tag)
+		// At buffer end — definitely the real end tag
 		if afterTag >= len(text) {
 			return pos
 		}
 		remaining := text[afterTag:]
-		// Real end tag should be followed by \n\n or be at the end with only whitespace
+		// Followed by \n\n — real end (clean separator)
 		if strings.HasPrefix(remaining, "\n\n") || strings.HasPrefix(remaining, "\r\n\r\n") {
 			return pos
 		}
-		// Check if only whitespace remains (buffer end scenario)
+		// Followed by only whitespace — real end
 		if isWhitespaceOnly(remaining) {
+			return pos
+		}
+		// Followed by visible non-whitespace text — the tag ends thinking and
+		// text continues immediately (e.g. </thinking>Visible answer).
+		// Accept this as a real end tag.
+		firstChar := remaining[0]
+		if firstChar != '"' && firstChar != '\'' && firstChar != '`' {
 			return pos
 		}
 		searchStart = pos + 1

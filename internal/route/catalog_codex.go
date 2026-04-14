@@ -10,13 +10,18 @@ var codexModelPrefixes = []string{
 }
 
 var codexModelCatalog = []ModelDefinition{
-	{ID: "gpt-5.1-codex-max", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5-codex", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5-codex-mini", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5.1", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5.1-codex", OwnedBy: string(ProviderCodex), SupportsThinking: true},
 	{ID: "gpt-5.1-codex-mini", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5.1-codex-max", OwnedBy: string(ProviderCodex), SupportsThinking: true},
 	{ID: "gpt-5.2", OwnedBy: string(ProviderCodex), SupportsThinking: true},
-	{ID: "gpt-5.4", OwnedBy: string(ProviderCodex), SupportsThinking: true},
 	{ID: "gpt-5.2-codex", OwnedBy: string(ProviderCodex), SupportsThinking: true},
 	{ID: "gpt-5.3-codex", OwnedBy: string(ProviderCodex), SupportsThinking: true},
-	{ID: "gpt-5.1-codex", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5.4", OwnedBy: string(ProviderCodex), SupportsThinking: true},
+	{ID: "gpt-5.4-mini", OwnedBy: string(ProviderCodex), SupportsThinking: true},
 }
 
 var codexModelLookup = makeModelLookup(codexModelCatalog)

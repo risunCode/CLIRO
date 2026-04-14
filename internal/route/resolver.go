@@ -96,7 +96,7 @@ func splitEffortSuffix(model string) (string, string) {
 	}
 
 	lowerModel := strings.ToLower(trimmed)
-	efforts := []string{"-xhigh", "-high", "-medium", "-low", "-minimal"}
+	efforts := []string{"-xhigh", "-high", "-medium", "-low", "-minimal", "-auto", "-max", "-none"}
 	for _, effort := range efforts {
 		if strings.HasSuffix(lowerModel, effort) {
 			base := strings.TrimSpace(trimmed[:len(trimmed)-len(effort)])

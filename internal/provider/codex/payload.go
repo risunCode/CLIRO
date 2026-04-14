@@ -46,7 +46,10 @@ func (s *Service) buildRequestPayloadWithToolNames(req provider.ChatRequest) (ma
 				params[k] = v
 			}
 		}
-		if len(params) > 0 {
+		if effort, ok := params["effort"].(string); ok && effort == "none" {
+			// -none suffix: explicitly disable reasoning block
+			delete(payload, "reasoning")
+		} else if len(params) > 0 {
 			if _, hasSummary := params["summary"]; !hasSummary {
 				params["summary"] = "auto"
 			}
@@ -121,17 +124,51 @@ func (s *Service) codexTools(tools []provider.Tool, mapping provider.ToolNameMap
 		if name == "" {
 			continue
 		}
+		schema, _ := provider.NormalizeToolSchema(tool.Function.Parameters).(map[string]any)
 		converted = append(converted, map[string]any{
 			"type":        "function",
 			"name":        name,
 			"description": strings.TrimSpace(tool.Function.Description),
-			"parameters":  provider.NormalizeToolSchema(tool.Function.Parameters),
+			"parameters":  repairToolSchema(schema),
 		})
 	}
 	if len(converted) == 0 {
 		return nil
 	}
 	return converted
+}
+
+// repairToolSchema walks JSON Schema properties and injects a missing "items: {}"
+// on any property declared as type "array" without an items field. This prevents
+// upstream Codex 400 errors when tool schemas are incomplete.
+func repairToolSchema(schema map[string]any) map[string]any {
+	if schema == nil {
+		return schema
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return schema
+	}
+	for key, val := range props {
+		prop, ok := val.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := prop["type"].(string); t == "array" {
+			if _, hasItems := prop["items"]; !hasItems {
+				prop["items"] = map[string]any{}
+				props[key] = prop
+			}
+		}
+		// Recurse into nested object schemas
+		if nested, ok := prop["properties"].(map[string]any); ok {
+			_ = nested
+			prop["properties"] = repairToolSchema(prop)["properties"]
+			props[key] = prop
+		}
+	}
+	schema["properties"] = props
+	return schema
 }
 
 func messageToText(content any) string {

@@ -17,7 +17,15 @@ import (
 	kiroprovider "cliro/internal/provider/kiro"
 )
 
-const fetchTimeout = 25 * time.Second
+const (
+	fetchTimeout = 25 * time.Second
+
+	// autoRefreshInterval is how often the quota auto-refresh loop wakes up.
+	autoRefreshInterval = 5 * time.Minute
+
+	// autoRefreshConcurrency caps concurrent quota refreshes in the auto loop.
+	autoRefreshConcurrency = 4
+)
 
 type Service struct {
 	store        *config.Manager
@@ -250,6 +258,119 @@ func (s *Service) refreshAllQuotas(force bool) error {
 		return fmt.Errorf(strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+// StartAutoQuotaRefreshLoop starts a background loop that wakes every
+// autoRefreshInterval and refreshes Codex accounts whose quota is
+// exhausted and whose reset timestamp has already passed, or whose
+// quota message indicates "windows reached their limit".
+// It returns immediately; the loop runs until ctx is cancelled.
+func (s *Service) StartAutoQuotaRefreshLoop(ctx context.Context) {
+	go func() {
+		s.runAutoQuotaRefreshOnce()
+		ticker := time.NewTicker(autoRefreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.runAutoQuotaRefreshOnce()
+			}
+		}
+	}()
+}
+
+func (s *Service) runAutoQuotaRefreshOnce() {
+	accounts := s.store.Accounts()
+	if len(accounts) == 0 {
+		return
+	}
+
+	now := time.Now().Unix()
+	var candidates []config.Account
+	for _, acc := range accounts {
+		if !shouldAutoRefreshQuota(acc, now) {
+			continue
+		}
+		candidates = append(candidates, acc)
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	s.log.InfoEvent("quota", "auto_refresh.start", logger.Int("candidates", len(candidates)))
+
+	sem := make(chan struct{}, autoRefreshConcurrency)
+	var wg sync.WaitGroup
+	for _, acc := range candidates {
+		acc := acc
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			label := config.AccountLabel(acc)
+			if _, err := s.RefreshQuota(acc.ID); err != nil {
+				s.log.WarnEvent("quota", "auto_refresh.failed",
+					logger.String("account", label),
+					logger.String("error", err.Error()))
+			} else {
+				s.log.InfoEvent("quota", "auto_refresh.ok",
+					logger.String("account", label))
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// shouldAutoRefreshQuota returns true when an account needs a background
+// quota refresh: it must be an enabled Codex account whose quota is
+// exhausted but the reset window has already passed, or whose quota
+// message contains "windows reached their limit".
+func shouldAutoRefreshQuota(acc config.Account, now int64) bool {
+	if !isCodexAccount(acc) {
+		return false
+	}
+	if !acc.Enabled || acc.Banned {
+		return false
+	}
+	if acc.HealthState == config.AccountHealthDisabledDurable || acc.HealthState == config.AccountHealthBanned {
+		return false
+	}
+
+	status := strings.ToLower(strings.TrimSpace(acc.Quota.Status))
+	isExhausted := status == "exhausted" || status == "empty"
+	windowsLimit := isWindowsLimitMessage(acc)
+
+	if !isExhausted && !windowsLimit {
+		return false
+	}
+
+	// For exhausted quota: only refresh once the reset timestamp has passed.
+	// For the windows-limit signal: refresh immediately.
+	if isExhausted && !windowsLimit {
+		resetAt := config.QuotaResetAt(acc.Quota)
+		if resetAt <= 0 || resetAt > now {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isWindowsLimitMessage(acc config.Account) bool {
+	needle := "windows reached their limit"
+	if strings.Contains(strings.ToLower(acc.Quota.Summary), needle) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(acc.Quota.Error), needle) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(acc.LastError), needle) {
+		return true
+	}
+	return false
 }
 
 func (s *Service) logQuotaRefreshBatch(force bool, total int, eligible int, skipped map[string]int) {

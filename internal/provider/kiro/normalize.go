@@ -28,12 +28,10 @@ func normalizeRequest(req provider.ChatRequest) ([]normalizedMessage, string, er
 	}
 
 	messages = mergeAdjacentMessages(messages)
-	messages = expandToolUseResultPairs(messages)
 
 	// Enhanced sanitization pipeline
 	messages = ensureStartsWithUserMessage(messages)
 	messages = removeEmptyUserMessages(messages)
-	messages = ensureValidToolUsesAndResults(messages)
 	messages = normalizeMessageRoles(messages)
 	messages = ensureAlternatingRoles(messages)
 	messages = ensureEndsWithUserMessage(messages)
@@ -218,40 +216,6 @@ func removeEmptyUserMessages(messages []normalizedMessage) []normalizedMessage {
 	return result
 }
 
-func ensureValidToolUsesAndResults(messages []normalizedMessage) []normalizedMessage {
-	// Collect all tool use IDs from assistant messages
-	toolUseIDs := make(map[string]struct{})
-	for _, msg := range messages {
-		if msg.Role == "assistant" {
-			for _, toolUse := range msg.ToolUses {
-				if id := strings.TrimSpace(toolUse.ToolUseID); id != "" {
-					toolUseIDs[id] = struct{}{}
-				}
-			}
-		}
-	}
-
-	// Validate tool results in user messages
-	result := make([]normalizedMessage, 0, len(messages))
-	for _, msg := range messages {
-		if msg.Role == "user" && len(msg.ToolResults) > 0 {
-			validResults := make([]toolResult, 0, len(msg.ToolResults))
-			for _, tr := range msg.ToolResults {
-				id := strings.TrimSpace(tr.ToolUseID)
-				if id == "" {
-					continue
-				}
-				// Relaxed validation: keep tool results even if tool use ID not found
-				// This prevents false rejections when timing or format issues occur
-				// The Kiro API will handle validation on its end
-				validResults = append(validResults, tr)
-			}
-			msg.ToolResults = validResults
-		}
-		result = append(result, msg)
-	}
-	return result
-}
 
 func ensureEndsWithUserMessage(messages []normalizedMessage) []normalizedMessage {
 	if len(messages) == 0 {
@@ -296,18 +260,6 @@ func ensureAlternatingRoles(messages []normalizedMessage) []normalizedMessage {
 	return result
 }
 
-func expandToolUseResultPairs(messages []normalizedMessage) []normalizedMessage {
-	if len(messages) == 0 {
-		return nil
-	}
-
-	// Keep multiple tool uses in single message instead of splitting
-	expanded := make([]normalizedMessage, 0, len(messages))
-	for _, message := range messages {
-		expanded = append(expanded, message)
-	}
-	return expanded
-}
 
 func extractToolUses(message provider.Message) []toolUsePayload {
 	toolUses := make([]toolUsePayload, 0, len(message.ToolCalls))
@@ -469,6 +421,10 @@ func stripInternalMetadataBlocks(text string) string {
 	if trimmed == "" {
 		return ""
 	}
+	// Fast path: skip regex when no metadata block is present (common case).
+	if !strings.Contains(trimmed, "<environment_details>") {
+		return trimmed
+	}
 	cleaned := internalMetadataBlockPattern.ReplaceAllString(trimmed, "")
 	return strings.TrimSpace(cleaned)
 }
@@ -478,24 +434,37 @@ func collapseBlankLines(text string) string {
 	if trimmed == "" {
 		return ""
 	}
-	lines := strings.Split(trimmed, "\n")
-	parts := make([]string, 0, len(lines))
-	blankPending := false
-	for _, line := range lines {
-		line = strings.TrimRight(line, " \t\r")
-		if strings.TrimSpace(line) == "" {
-			if len(parts) > 0 {
-				blankPending = true
-			}
-			continue
-		}
-		if blankPending {
-			parts = append(parts, "")
-			blankPending = false
-		}
-		parts = append(parts, line)
+	// Fast path: no newlines means nothing to collapse.
+	if !strings.Contains(trimmed, "\n") {
+		return trimmed
 	}
-	return strings.TrimSpace(strings.Join(parts, "\n"))
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	blankPending := false
+	hasContent := false
+	start := 0
+	for i := 0; i <= len(trimmed); i++ {
+		if i == len(trimmed) || trimmed[i] == '\n' {
+			line := strings.TrimRight(trimmed[start:i], " \t\r")
+			if strings.TrimSpace(line) == "" {
+				if hasContent {
+					blankPending = true
+				}
+			} else {
+				if hasContent {
+					b.WriteByte('\n')
+				}
+				if blankPending {
+					b.WriteByte('\n')
+					blankPending = false
+				}
+				b.WriteString(line)
+				hasContent = true
+			}
+			start = i + 1
+		}
+	}
+	return b.String()
 }
 
 func parseToolArguments(arguments string) map[string]any {
@@ -552,109 +521,4 @@ func defaultIfNilMap(value map[string]any) map[string]any {
 	return value
 }
 
-func splitAssistantToolUses(message normalizedMessage, next *normalizedMessage) []normalizedMessage {
-	if len(message.ToolUses) <= 1 {
-		result := []normalizedMessage{message}
-		if next != nil {
-			result = append(result, *next)
-		}
-		return result
-	}
 
-	resultsByID := make(map[string]toolResult)
-	orderedUnmatched := make([]toolResult, 0)
-	nextContent := ""
-	if next != nil {
-		nextContent = strings.TrimSpace(next.Content)
-		for _, result := range next.ToolResults {
-			id := strings.TrimSpace(result.ToolUseID)
-			if id == "" {
-				orderedUnmatched = append(orderedUnmatched, result)
-				continue
-			}
-			if _, exists := resultsByID[id]; exists {
-				continue
-			}
-			resultsByID[id] = result
-		}
-	}
-
-	expanded := make([]normalizedMessage, 0, (len(message.ToolUses)*2)+1)
-	emittedUser := false
-	for toolIndex, toolUse := range message.ToolUses {
-		assistantContent := ""
-		if toolIndex == 0 {
-			assistantContent = strings.TrimSpace(message.Content)
-		}
-		expanded = append(expanded, normalizedMessage{
-			Role:     "assistant",
-			Content:  assistantContent,
-			ToolUses: []toolUsePayload{toolUse},
-		})
-
-		if next == nil {
-			continue
-		}
-
-		result, ok := resultsByID[strings.TrimSpace(toolUse.ToolUseID)]
-		if !ok {
-			continue
-		}
-		userContent := ""
-		if toolIndex == len(message.ToolUses)-1 {
-			userContent = nextContent
-		}
-		expanded = append(expanded, normalizedMessage{
-			Role:        "user",
-			Content:     userContent,
-			ToolResults: []toolResult{result},
-		})
-		emittedUser = true
-		delete(resultsByID, strings.TrimSpace(toolUse.ToolUseID))
-	}
-
-	if next == nil {
-		return expanded
-	}
-
-	leftovers := make([]toolResult, 0, len(resultsByID)+len(orderedUnmatched))
-	for _, result := range next.ToolResults {
-		id := strings.TrimSpace(result.ToolUseID)
-		if id == "" {
-			leftovers = append(leftovers, result)
-			continue
-		}
-		if _, ok := resultsByID[id]; ok {
-			leftovers = append(leftovers, result)
-		}
-	}
-	if len(leftovers) > 0 || (!emittedUser && nextContent != "") {
-		expanded = append(expanded, normalizedMessage{
-			Role:        "user",
-			Content:     nextContent,
-			ToolResults: leftovers,
-		})
-	}
-
-	return expanded
-}
-
-func splitUserToolResults(message normalizedMessage) []normalizedMessage {
-	if len(message.ToolResults) <= 1 {
-		return []normalizedMessage{message}
-	}
-
-	expanded := make([]normalizedMessage, 0, len(message.ToolResults))
-	for index, result := range message.ToolResults {
-		content := ""
-		if index == len(message.ToolResults)-1 {
-			content = strings.TrimSpace(message.Content)
-		}
-		expanded = append(expanded, normalizedMessage{
-			Role:        "user",
-			Content:     content,
-			ToolResults: []toolResult{result},
-		})
-	}
-	return expanded
-}

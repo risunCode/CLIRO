@@ -22,6 +22,7 @@ export interface AccountPresentation {
   quotaStatus: ReturnType<typeof deriveQuotaDisplayStatus>
   quotaDisplayMode: QuotaDisplayMode
   disabledHint: QuotaHint | null
+  disabledSecondaryHint: QuotaHint | null
   quotaHint: QuotaHint | null
   metrics: ReturnType<typeof getOverviewQuotaMetrics>
   metricsWithReset: ReturnType<typeof getOverviewQuotaMetrics>
@@ -57,8 +58,10 @@ const firstNonEmptyMessage = (...values: Array<string | undefined>): string => {
   return ''
 }
 
+const accountHealthState = (account: Account): string => account.healthState ?? 'ready'
+
 const isQuotaCooldown = (account: Account, quotaStatus: ReturnType<typeof deriveQuotaDisplayStatus>): boolean => {
-  if (account.healthState === 'cooldown_quota') {
+  if (accountHealthState(account) === 'cooldown_quota') {
     return true
   }
   if (quotaStatus !== 'exhausted' && quotaStatus !== 'empty') {
@@ -267,12 +270,23 @@ export const getAccountDisabledReason = (account: Account): string => {
   return 'Disabled by user'
 }
 
+const buildDisabledSecondaryHint = (account: Account, disabledKind: DisabledReason | null): QuotaHint | null => {
+  if (disabledKind !== 'manual') {
+    return null
+  }
+  if (!isAuthReloginState(account)) {
+    return null
+  }
+  return { text: 'Need Re-login', tone: 'error' }
+}
+
 export const presentAccount = (account: Account): AccountPresentation => {
   const providerID = normalizeProviderID(account.provider)
   const quotaStatus = deriveQuotaDisplayStatus(account.quota)
   const quotaHint = buildQuotaHint(account, quotaStatus)
   const disabledHint = buildDisabledHint(account)
   const disabledKind = account.enabled ? null : inferDisabledReason(account)
+  const disabledSecondaryHint = buildDisabledSecondaryHint(account, disabledKind)
   const metrics = getOverviewQuotaMetrics(account.quota)
 
   return {
@@ -285,6 +299,7 @@ export const presentAccount = (account: Account): AccountPresentation => {
     quotaStatus,
     quotaDisplayMode: shouldUseStatusMode(account, quotaStatus, quotaHint) ? 'status' : 'metrics',
     disabledHint,
+    disabledSecondaryHint,
     quotaHint,
     metrics,
     metricsWithReset: metrics.filter((metric) => hasValidReset(metric.resetAt))

@@ -1,6 +1,7 @@
 package kiro
 
 import (
+	"cliro/internal/auth/shared"
 	"cliro/internal/util"
 	"context"
 	"fmt"
@@ -269,7 +270,7 @@ func (s *Service) SubmitAuthCode(sessionID string, code string) error {
 }
 
 func (s *Service) RefreshAccount(account config.Account, force bool) (config.Account, error) {
-	if !force && !tokenExpired(account, time.Now()) {
+	if !force && !shared.TokenExpired(account, time.Now()) {
 		return account, nil
 	}
 	if strings.TrimSpace(account.RefreshToken) == "" {
@@ -281,14 +282,7 @@ func (s *Service) RefreshAccount(account config.Account, force bool) (config.Acc
 
 	tokens, err := s.refreshTokens(context.Background(), account.ClientID, account.ClientSecret, account.RefreshToken)
 	if err != nil {
-		if blockedMsg, blocked := config.BlockedAccountReason(err.Error()); blocked {
-			_ = s.store.MarkAccountBanned(account.ID, blockedMsg)
-		} else if reloginMessage, refreshable := config.RefreshableAuthReason(err.Error()); refreshable {
-			_ = s.store.MarkAccountReloginRequired(account.ID, reloginMessage)
-			if updated, ok := s.store.GetAccount(account.ID); ok {
-				account = updated
-			}
-		}
+		shared.HandleRefreshFailure(s.store, s.log, &account, err)
 		s.log.Error("auth", "kiro refresh failed for "+account.Email+": "+err.Error())
 		return account, err
 	}
@@ -321,7 +315,7 @@ func (s *Service) RefreshAccount(account config.Account, force bool) (config.Acc
 		return account, err
 	}
 
-	refreshed, _ := s.store.GetAccount(account.ID)
+	refreshed, _ := shared.FetchUpdatedAccount(s.store, s.log, account)
 	s.log.Info("auth", "refreshed Kiro token for "+refreshed.Email)
 	return refreshed, nil
 }
@@ -590,21 +584,10 @@ func (s *Service) refreshNewAccountQuota(accountID string) {
 }
 
 func (s *Service) client() *http.Client {
-	if s.httpClient != nil {
-		if client := s.httpClient(); client != nil {
-			return client
-		}
-	}
-	return &http.Client{Timeout: 60 * time.Second}
+	return shared.DefaultHTTPClient(s.httpClient)
 }
 
 func looksLikeSocialRefreshToken(refreshToken string) bool {
 	return strings.HasPrefix(strings.TrimSpace(refreshToken), "aorAAAAAG")
 }
 
-func tokenExpired(account config.Account, now time.Time) bool {
-	if account.ExpiresAt <= 0 {
-		return false
-	}
-	return now.Unix() >= account.ExpiresAt
-}

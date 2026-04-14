@@ -25,6 +25,15 @@ import (
 
 var ErrFirstTokenTimeout = errors.New("kiro first token timeout")
 
+// O11: pre-computed machine ID — generated once at startup instead of per HTTP attempt.
+var cachedMachineID = strings.ReplaceAll(uuid.NewString(), "-", "")
+
+// O19: pre-computed origin byte patterns for updateOriginInPayload.
+var (
+	originAIEditor = []byte(`"origin":"AI_EDITOR"`)
+	originCLI      = []byte(`"origin":"CLI"`)
+)
+
 const (
 	kiroPrimaryURL          = "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
 	kiroFallbackURL         = "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
@@ -101,21 +110,23 @@ func (s *Service) CompleteWithCallback(ctx context.Context, req provider.ChatReq
 
 func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest, eventCallback func(StreamEvent)) (provider.CompletionOutcome, int, string, error) {
 	requestID := platform.RequestIDFromContext(ctx)
-	if strings.TrimSpace(req.Model) == "" {
+	model := strings.TrimSpace(req.Model)
+	route := strings.TrimSpace(req.RouteFamily)
+	if model == "" {
 		s.recordRequestFailure()
-		s.logProxyEvent("warn", "request.rejected", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("reason", "model is required"))
+		s.logProxyEvent("warn", "request.rejected", requestID, logger.String("route", route), logger.String("reason", "model is required"))
 		return provider.CompletionOutcome{}, http.StatusBadRequest, "model is required", fmt.Errorf("model is required")
 	}
 
 	if s.pool.AvailabilitySnapshot("kiro").ReadyCount == 0 {
 		s.recordRequestFailure()
 		reason := s.pool.ProviderUnavailableReason("kiro")
-		s.logProxyEvent("warn", "request.rejected", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("reason", reason))
+		s.logProxyEvent("warn", "request.rejected", requestID, logger.String("route", route), logger.String("reason", reason))
 		return provider.CompletionOutcome{}, http.StatusServiceUnavailable, reason, fmt.Errorf(reason)
 	}
 
 	runtimeClient := newRuntimeClient(s.httpClient, s.firstTokenTimeout)
-	thinkingSettings := s.store.Snapshot().Thinking
+	thinkingSettings := s.store.ThinkingSettings()
 	var lastStatus int
 	var lastMessage string
 	excluded := make(map[string]bool)
@@ -129,7 +140,7 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 		}
 		attempt++
 		accountLabel := config.AccountLabel(candidate)
-		s.logProxyEvent("info", "request.attempt", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("account", accountLabel), logger.String("model", strings.TrimSpace(req.Model)))
+		s.logProxyEvent("info", "request.attempt", requestID, logger.String("route", route), logger.String("account", accountLabel), logger.String("model", model))
 		account, err := s.auth.EnsureFreshAccount(candidate.ID)
 		if err != nil {
 			decision := classifyHTTPFailure(http.StatusUnauthorized, []byte(err.Error()))
@@ -147,17 +158,19 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 		accountLabel = config.AccountLabel(account)
 		recoveredAuth := false
 
+		// O12: build payload once per account (profileARN is account-specific), not per inner retry.
+		payload, toolNames, err := buildRequestPayloadWithToolNames(req, account, thinkingSettings)
+		if err != nil {
+			s.recordRequestFailure()
+			return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			s.recordRequestFailure()
+			return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
+		}
+
 		for {
-			payload, toolNames, err := buildRequestPayloadWithToolNames(req, account, thinkingSettings)
-			if err != nil {
-				s.recordRequestFailure()
-				return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
-			}
-			body, err := json.Marshal(payload)
-			if err != nil {
-				s.recordRequestFailure()
-				return provider.CompletionOutcome{}, http.StatusBadRequest, err.Error(), err
-			}
 
 			openStarted := time.Now()
 			resp, _, err := runtimeClient.Do(ctx, account, body)
@@ -291,7 +304,7 @@ func (s *Service) completePrepared(ctx context.Context, req provider.ChatRequest
 		lastMessage = "all kiro accounts failed"
 	}
 	s.recordRequestFailure()
-	s.logProxyEvent("warn", "request.failed", requestID, logger.String("route", strings.TrimSpace(req.RouteFamily)), logger.String("reason", lastMessage))
+	s.logProxyEvent("warn", "request.failed", requestID, logger.String("route", route), logger.String("reason", lastMessage))
 	return provider.CompletionOutcome{}, lastStatus, lastMessage, fmt.Errorf(lastMessage)
 }
 
@@ -447,7 +460,7 @@ func (s *Service) logQuotaEvent(level string, event string, requestID string, fi
 
 func (s *Service) logEvent(level string, scope string, event string, requestID string, fields ...logger.Field) {
 	eventFields := append([]logger.Field{logger.String("request_id", requestID), logger.String("provider", "kiro")}, fields...)
-	switch strings.ToLower(strings.TrimSpace(level)) {
+	switch level {
 	case "warn":
 		s.log.WarnEvent(scope, event, eventFields...)
 	case "error":
@@ -504,22 +517,11 @@ func (c *runtimeClient) Do(ctx context.Context, account config.Account, body []b
 }
 
 func updateOriginInPayload(body []byte, endpoint endpointConfig) []byte {
-	origin := "CLI"
+	// O19: use pre-computed byte slices instead of allocating on every call.
 	if endpoint.Name == "codewhisperer" {
-		origin = "AI_EDITOR"
+		return bytes.ReplaceAll(body, originCLI, originAIEditor)
 	}
-
-	oldOrigin := "AI_EDITOR"
-	newOrigin := origin
-	if origin == "AI_EDITOR" {
-		oldOrigin = "CLI"
-	}
-
-	return bytes.ReplaceAll(body, []byte(`"origin":"`+oldOrigin+`"`), []byte(`"origin":"`+newOrigin+`"`))
-}
-
-func (c *runtimeClient) doOnce(ctx context.Context, account config.Account, body []byte, endpoint endpointConfig, attempt int) (*http.Response, error) {
-	return c.doOnceWithTimeout(ctx, account, body, endpoint, attempt, c.firstTokenTimeout)
+	return bytes.ReplaceAll(body, originAIEditor, originCLI)
 }
 
 func (c *runtimeClient) doOnceWithTimeout(ctx context.Context, account config.Account, body []byte, endpoint endpointConfig, attempt int, timeout time.Duration) (*http.Response, error) {
@@ -573,8 +575,8 @@ func applyRuntimeHeaders(req *http.Request, account config.Account, endpoint end
 		req.Header.Set("x-amz-user-agent", "aws-sdk-rust/1.3.9 ua/2.1 api/ssooidc/1.88.0 os/macos lang/rust/1.87.0 m/E app/AmazonQ-For-CLI")
 		req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
 	} else {
-		machineID := generateMachineID()
-		req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.2.15 m/E KiroIDE-0.11.107-%s", machineID))
+		// O11: use cached machine ID instead of generating a new UUID per attempt.
+		req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.2.15 ua/2.1 os/linux lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.2.15 m/E KiroIDE-0.11.107-%s", cachedMachineID))
 		req.Header.Set("x-amz-user-agent", "aws-sdk-js/1.2.15 KiroIDE 0.11.107")
 		req.Header.Set("x-amzn-kiro-agent-mode", "spec")
 	}
@@ -641,13 +643,16 @@ func upstreamErrorMessage(statusCode int, body []byte) string {
 	if trimmed == "" {
 		return http.StatusText(statusCode)
 	}
-	for _, key := range []string{"message", "Message", "errorMessage"} {
-		var object map[string]any
-		if err := json.Unmarshal(body, &object); err == nil {
+	// O13: unmarshal once, then probe all three keys in a single pass.
+	var object map[string]any
+	if err := json.Unmarshal(body, &object); err == nil {
+		for _, key := range []string{"message", "Message", "errorMessage"} {
 			if value, ok := object[key].(string); ok && strings.TrimSpace(value) != "" {
 				return strings.TrimSpace(value)
 			}
-			if nested, ok := object["error"].(map[string]any); ok {
+		}
+		if nested, ok := object["error"].(map[string]any); ok {
+			for _, key := range []string{"message", "Message", "errorMessage"} {
 				if value, ok := nested[key].(string); ok && strings.TrimSpace(value) != "" {
 					return strings.TrimSpace(value)
 				}

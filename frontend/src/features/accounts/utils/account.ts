@@ -34,7 +34,7 @@ const providerLabels: Record<string, string> = {
 }
 
 export const normalizeProviderID = (provider: string): string => {
-  return (provider || 'codex').trim().toLowerCase()
+  return (provider || 'codex').trim()
 }
 
 export const providerMeta = (providerId: string): ProviderMeta => {

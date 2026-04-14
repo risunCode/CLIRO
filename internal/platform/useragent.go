@@ -1,32 +1,24 @@
 package platform
 
-import (
-	"fmt"
-	"runtime"
+import "fmt"
+
+const (
+	codexTUIVersion    = "0.118.0"
+	codexTUIApp        = "iTerm.app/3.6.9"
+	codexTUISpoofOS    = "Mac OS 26.3.1"
+	codexTUISpoofArch  = "arm64"
 )
 
-const opencodeVersion = "1.2.27"
-
-// BuildOpencodeUserAgent mocks opencode user-agent format
-// Format: opencode/{version} ({os} {osVersion}; {arch})
-// Examples:
-//   - Windows: opencode/1.2.27 (windows 10.0.26100; amd64)
-//   - Mac Intel: opencode/1.2.27 (darwin 23.0.0; amd64)
-//   - Mac ARM: opencode/1.2.27 (darwin 23.0.0; arm64)
-//   - Linux: opencode/1.2.27 (linux 6.5.0; amd64)
-func BuildOpencodeUserAgent() string {
-	osVersion := getOSVersion()
-	if osVersion != "" {
-		return fmt.Sprintf("opencode/%s (%s %s; %s)",
-			opencodeVersion,
-			runtime.GOOS,
-			osVersion,
-			runtime.GOARCH)
-	}
-
-	// Fallback if version detection fails
-	return fmt.Sprintf("opencode/%s (%s; %s)",
-		opencodeVersion,
-		runtime.GOOS,
-		runtime.GOARCH)
+// BuildCodexTUIUserAgent mocks the codex-tui user-agent format used by the
+// official Codex CLI client.
+// Format: codex-tui/{version} ({os} {osVersion}; {arch}) {app} (codex-tui; {version})
+// Example: codex-tui/0.118.0 (Mac OS 26.3.1; arm64) iTerm.app/3.6.9 (codex-tui; 0.118.0)
+func BuildCodexTUIUserAgent() string {
+	return fmt.Sprintf("codex-tui/%s (%s; %s) %s (codex-tui; %s)",
+		codexTUIVersion,
+		codexTUISpoofOS,
+		codexTUISpoofArch,
+		codexTUIApp,
+		codexTUIVersion,
+	)
 }

@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 type Manager struct {
@@ -14,6 +15,9 @@ type Manager struct {
 	accounts        []Account
 	stats           ProxyStats
 	startupWarnings []StartupWarning
+
+	// O14: lock-free snapshot of model aliases for hot read path.
+	aliasesSnapshot atomic.Pointer[map[string]string]
 }
 
 func NewManager(dataDir string) (*Manager, error) {
@@ -45,6 +49,9 @@ func (m *Manager) load() error {
 	settings.SchedulingMode = string(normalizeSchedulingMode(SchedulingMode(settings.SchedulingMode)))
 	settings.Cloudflared = normalizeCloudflaredSettings(settings.Cloudflared)
 	m.settings = settings
+	// O14: seed atomic alias snapshot on load.
+	aliasClone := cloneModelAliases(settings.ModelAliases)
+	m.aliasesSnapshot.Store(&aliasClone)
 
 	accounts, warnings, err := m.storage.LoadAccounts()
 	if err != nil {
@@ -55,6 +62,9 @@ func (m *Manager) load() error {
 		accounts = []Account{}
 	}
 	sort.Slice(accounts, func(i, j int) bool { return accounts[i].CreatedAt > accounts[j].CreatedAt })
+	for i := range accounts {
+		accounts[i].Provider = strings.ToLower(strings.TrimSpace(accounts[i].Provider))
+	}
 	m.accounts = accounts
 
 	stats, warnings, err := m.storage.LoadStats()
@@ -107,9 +117,13 @@ func (m *Manager) StartupWarnings() []StartupWarning {
 func (m *Manager) Accounts() []Account {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	accounts := cloneAccounts(m.accounts)
-	sort.Slice(accounts, func(i, j int) bool { return accounts[i].CreatedAt > accounts[j].CreatedAt })
-	return accounts
+	return cloneAccounts(m.accounts)
+}
+
+func (m *Manager) ThinkingSettings() ThinkingSettings {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return cloneThinkingSettings(m.settings.Thinking)
 }
 
 func (m *Manager) ProxyPort() int {
@@ -228,9 +242,20 @@ func (m *Manager) ModelAliases() map[string]string {
 	return cloneModelAliases(m.settings.ModelAliases)
 }
 
+// ModelAliasesSnapshot returns the model aliases map from an atomic snapshot — no lock, no clone.
+// O14: callers on the hot request path use this instead of ModelAliases().
+func (m *Manager) ModelAliasesSnapshot() map[string]string {
+	if p := m.aliasesSnapshot.Load(); p != nil {
+		return *p
+	}
+	return m.ModelAliases()
+}
+
 func (m *Manager) SetModelAliases(aliases map[string]string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.settings.ModelAliases = cloneModelAliases(aliases)
+	cloned := cloneModelAliases(aliases)
+	m.settings.ModelAliases = cloned
+	m.aliasesSnapshot.Store(&cloned)
 	return m.saveSettings()
 }

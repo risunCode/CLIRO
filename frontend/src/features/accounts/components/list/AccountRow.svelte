@@ -36,6 +36,7 @@ export let deleteInProgress = false
   $: quotaStatus = presentation.quotaStatus
   $: quotaDisplayMode = presentation.quotaDisplayMode
   $: disabledHint = presentation.disabledHint
+  $: disabledSecondaryHint = presentation.disabledSecondaryHint
   $: quotaHint = presentation.quotaHint
 </script>
 
@@ -94,6 +95,9 @@ export let deleteInProgress = false
             <div class="table-metric-status-head">
               <div class="table-metric-hint">
                 <span class={`metric-hint-pill tone-${disabledHint.tone}`}>{disabledHint.text}</span>
+                {#if disabledSecondaryHint}
+                  <span class={`metric-hint-pill tone-${disabledSecondaryHint.tone}`}>{disabledSecondaryHint.text}</span>
+                {/if}
               </div>
               {#if disabledHint.metaPillText}
                 <span class={`metric-meta-pill tone-${disabledHint.metaPillTone || 'neutral'}`}>{disabledHint.metaPillText}</span>

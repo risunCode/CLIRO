@@ -11,7 +11,7 @@
   export let onPrefetchTab: (tab: AppTabId) => void = () => {}
   export let onToggleTheme: () => void = () => {}
 
-  const appVersion = 'v0.3.0'
+  const appVersion = 'v0.3.2'
 
   const getThemeIcon = (value: Theme) => {
     if (value === 'light') {

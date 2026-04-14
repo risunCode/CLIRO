@@ -278,6 +278,21 @@ func (m *Manager) findCodexAccountForSync(accountID, targetName string) (config.
 	return account, nil
 }
 
+// StartCodexRefreshLoop starts the background Codex token auto-refresh goroutine.
+// Call this once after the app is ready to serve requests.
+func (m *Manager) StartCodexRefreshLoop(ctx context.Context) {
+	p, err := m.providerFor("codex")
+	if err != nil {
+		return
+	}
+	type refreshLoopStarter interface {
+		StartRefreshLoop(ctx context.Context)
+	}
+	if starter, ok := p.(refreshLoopStarter); ok {
+		starter.StartRefreshLoop(ctx)
+	}
+}
+
 func (m *Manager) refreshQuotaOnly(accountID string) error {
 	m.mu.RLock()
 	refresher := m.quotaRefresher
